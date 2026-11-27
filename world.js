@@ -4,13 +4,47 @@ const MACHINE_PROFILES=[
  {id:'SK10SR',nominal:.03,capacity:.028,width:1.00,height:2.25,shoe:.18,track:1.38,boom:1.48,arm:.85,bucket:.40,tail:.50,deck:.54,pivot:.72,front:.32,mini:true,open:true,cabW:.60,cabD:.81},
  {id:'SK35SR',nominal:.10,capacity:.10,width:1.70,height:2.51,shoe:.30,track:2.14,boom:2.35,arm:1.32,bucket:.60,tail:.85,deck:.83,pivot:1.12,front:.42,mini:true,open:false,cabW:.76,cabD:1.04},
  {id:'SK55SR',nominal:.15,capacity:.15,width:1.96,height:2.53,shoe:.40,track:2.48,boom:2.99,arm:1.69,bucket:.65,tail:1.17,deck:.91,pivot:1.24,front:.48,mini:true,open:false,cabW:.85,cabD:1.18},
- {id:'SK75SR',nominal:.25,capacity:.28,width:2.30,height:2.53,shoe:.45,track:2.85,boom:3.30,arm:1.71,bucket:.75,tail:1.29,deck:1.02,pivot:1.42,front:.55,mini:false,open:false,cabW:.93,cabD:1.36},
+ {id:'SK75SR',nominal:.25,capacity:.28,width:2.30,height:2.53,shoe:.45,track:2.85,boom:3.82,arm:1.71,bucket:.75,tail:1.29,deck:1.02,pivot:1.42,front:.55,mini:true,open:false,cabW:.93,cabD:1.36},
  {id:'SK125SR',nominal:.45,capacity:.45,width:2.49,height:2.81,shoe:.50,track:3.53,boom:4.60,arm:2.38,bucket:.85,tail:1.49,deck:1.14,pivot:1.62,front:.67,mini:false,open:false,cabW:.98,cabD:1.42},
  {id:'SK200',nominal:.70,capacity:.80,width:2.80,height:3.01,shoe:.60,track:4.17,boom:5.65,arm:2.94,bucket:1.08,tail:2.75,deck:1.35,pivot:1.85,front:.76,mini:false,open:false,cabW:1.00,cabD:1.48},
  {id:'SK330',nominal:1.20,capacity:1.40,width:3.19,height:3.30,shoe:.60,track:4.95,boom:6.50,arm:3.30,bucket:1.40,tail:3.25,deck:1.49,pivot:2.05,front:.84,mini:false,open:false,cabW:1.05,cabD:1.55}
 ];
 function machineProfile(s){return MACHINE_PROFILES.find(p=>Math.abs(p.nominal-Number(s.capacity))<.0001)||MACHINE_PROFILES[3]}
 function rig(s){const p=machineProfile(s),sc=s.scale||1;return {p,sc,B:p.boom/sc,A:p.arm/sc,Y:p.pivot/sc,Z:p.front/sc,X:(p.width*.17)/sc}}
+
+
+// Common attachment silhouettes; model-specific dimensions are in metres.
+// Kobelco parts catalogue: SK75/125/200 standard; SK75/135/200 slope;
+// SK35/55/75/135/200 skeleton. Other sizes and pivot offsets are estimates.
+const FITS=[
+ [.40,.50,.48,.09,.025,.60,.36,.32,.25,.42,3,3,3],
+ [.60,.72,.70,.141,.04,.95,.55,.48,.32,.596,4,3,4],
+ [.65,.82,.81,.151,.045,1.20,.62,.54,.38,.688,4,3,5],
+ [.75,.99,.99,.182,.05,1.50,.74,.625,.40,.836,4,3,4],
+ [.913,1.13,1.10,.252,.065,1.80,.90,.738,.55,1.104,4,3,5],
+ [1.15,1.35,1.30,.327,.08,2.20,1.10,.85,.65,1.175,5,3,5],
+ [1.40,1.60,1.55,.40,.09,2.40,1.25,.99,.80,1.48,5,4,6]
+];
+const FORMS={
+ 0:{shell:[[.12,-.15],[.055,.04],[.065,.23],[.18,.43],[.34,.54],[.53,.55],[.69,.48],[.82,.34],[.90,.24]],rim:[[.12,-.15],[.36,-.105],[.62,.025],[.90,.24]],tip:[.24,1.055]},
+ 1:{shell:[[.10,-.12],[.06,.02],[.09,.20],[.22,.33],[.38,.36],[.56,.31],[.68,.24],[.78,.18]],rim:[[.10,-.12],[.34,-.07],[.58,.07],[.78,.18]],tip:[.18,.84]},
+ 2:{shell:[[.12,-.15],[.045,.05],[.07,.27],[.21,.50],[.39,.60],[.57,.59],[.73,.47],[.86,.32],[.93,.24]],rim:[[.12,-.15],[.38,-.10],[.68,.055],[.93,.24]],tip:[.24,1.08]},
+ 5:{shell:[[.12,-.15],[.065,.04],[.08,.23],[.22,.44],[.39,.53],[.56,.53],[.72,.44],[.86,.30],[.91,.24]],rim:[[.12,-.15],[.40,-.10],[.68,.06],[.91,.24]],tip:[.24,1.055]}
+};
+function bucketSpec(s,att=s.att){
+ const form=FORMS[att];if(!form)return null;
+ const p=machineProfile(s),i=MACHINE_PROFILES.indexOf(p),f=FITS[i],sc=s.scale||1;
+ const W=(att===1?f[5]:att===2?f[8]:att===5?f[9]:f[0])/sc;
+ const D=(att===1?f[6]:f[1]*(att===2?1.04:1))/sc;
+ const H=(att===1?f[7]:f[2]*(att===2?1.06:1))/sc;
+ const zf=D/(att===1?.88:1.10),yf=H/(att===1?.63:.88);
+ const cv=([z,y])=>[z*zf,y*yf];
+ const shell=form.shell.map(cv),rim=form.rim.map(cv),lip=shell[shell.length-1],tip=[form.tip[0]*yf,form.tip[1]*zf];
+ const gap=f[3]/sc,pin=f[4]/sc,thick=Math.max(.010,.012/sc*Math.sqrt(f[0]/.75));
+ // Direction from the shell toward the open mouth, derived from the rim endpoints.
+ const dy=lip[1]-rim[0][1],dz=lip[0]-rim[0][0],len=Math.hypot(dy,dz);
+ return {att,W,D,H,shell,rim,lip,tip,gap,pin,thick,teeth:att===1?0:att===2?f[11]:att===5?f[12]:f[10],normalY:-dz/len,normalZ:dy/len};
+}
 
 function createWorld(canvas){
 const T=THREE, scene=new T.Scene(), renderer=new T.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'}), camera=new T.PerspectiveCamera(58,1,.04,450);
@@ -92,34 +126,59 @@ function adjust(pair,a,b,f=.58){const mid=a.clone().lerp(b,f);place(pair[0],a,mi
 const hoses=[];for(let i=0;i<3;i++){const pts=[v(-.12+i*.065,.17,.05),v(-.12+i*.065,.36,.45),v(-.12+i*.065,.42,1.1),v(-.12+i*.065,.25,1.75),v(-.12+i*.065,.16,2.20)];const curve=new T.CatmullRomCurve3(pts);hoses.push(mesh(boomVisual,new T.TubeGeometry(curve,20,.019,6,false),rubber))}
 const tools=[];const worn=mat(0x777774,.54,.69),bucketSteel=mat(0x555653,.74,.56);
 function curvedPlate(p,points,w,m){const curve=new T.CatmullRomCurve3(points.map(([z,y])=>v(0,y,z)),false,'centripetal');let verts=[],ix=[],normals;const count=22;for(let j=0;j<=count;j++){let q=curve.getPoint(j/count);verts.push(-w/2,q.y,q.z,w/2,q.y,q.z)}for(let j=0;j<count;j++){let i=j*2;ix.push(i,i+1,i+2,i+1,i+3,i+2)}const geom=new T.BufferGeometry();geom.setAttribute('position',new T.Float32BufferAttribute(verts,3));geom.setIndex(ix);geom.computeVertexNormals();let mm=m.clone();mm.side=T.DoubleSide;return mesh(p,geom,mm)}
-function bucket(w,teeth,skeleton=false){
-const g=group(tool);
-const profile=[[-.09,.035],[.025,.19],[.16,.32],[.32,.39],[.49,.38],[.63,.31],[.74,.23],[.79,.18]];
-// Continuous curved back and open mouth; the side plates taper toward the lip.
-const shape=[...profile,[.69,.12],[.49,.015],[.25,-.075],[.12,-.095]];
-for(const side of [-1,1]){
- extrude(g,bucketSteel,shape,.038,side*(w/2-.019),0,0,.009);
- const rim=segment(g,worn,.010);place(rim,v(side*w*.5,-.095,.12),v(side*w*.5,.18,.79));
+// Build continuous thickness steel shell, not a solid block. All parts use the same physical profile.
+function bucket(spec){
+ const {W:w,shell,rim,lip,tip,gap,pin,thick,teeth,att}=spec,skeleton=att===5,g=group(tool);
+ const shape=[...shell,...rim.slice(1,-1).reverse()];
+ const surfaceCurve=new T.CatmullRomCurve3(shell.map(([z,y])=>v(0,y,z)),false,'centripetal');
+ const backMat=bucketSteel,insideMat=mat(0x4d5151,.65,.40);
+ function thickShell(){
+  const verts=[],idx=[],n=48;
+  for(let j=0;j<=n;j++){let t=j/n,q=surfaceCurve.getPoint(t),d=surfaceCurve.getTangent(t);let ny=-d.z,nz=d.y;
+   // Inner skin offset toward the cavity, using the local surface normal.
+   for(const [x,inner] of [[-w/2,0],[w/2,0],[-w/2+thick,1],[w/2-thick,1]])verts.push(x,q.y+ny*thick*inner,q.z+nz*thick*inner);
+  }
+  for(let j=0;j<n;j++){const i=j*4,k=i+4;idx.push(i,k,i+1,i+1,k,k+1,i+2,i+3,k+2,i+3,k+3,k+2,i,i+2,k,k,i+2,k+2,i+1,k+1,i+3,i+3,k+1,k+3)}
+  idx.push(0,1,2,1,3,2);let e=n*4;idx.push(e,e+2,e+1,e+1,e+2,e+3);
+  const geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(verts,3));geo.setIndex(idx);geo.computeVertexNormals();let m=backMat.clone();m.side=T.DoubleSide;mesh(g,geo,m);
+ }
+ for(const sign of [-1,1]){
+  extrude(g,backMat,shape,thick*1.5,sign*(w/2-thick*.65),0,0,thick*.2);
+  // Side cutting edge follows the actual mouth boundary.
+  for(let j=1;j<rim.length;j++){const a=rim[j-1],b=rim[j];const seg=segment(g,worn,thick*.85);place(seg,v(sign*w/2,a[1],a[0]),v(sign*w/2,b[1],b[0]))}
+  if(teeth&&att!==5){const z=lip[0],y=lip[1],d=spec.D;extrude(g,worn,[[z-d*.28,y-d*.15],[z-d*.05,y-d*.035],[z+d*.035,y+d*.03],[z-d*.16,y+d*.055]],thick*1.8,sign*(w/2+thick*.5),0,0,thick*.15);for(let j=0;j<2;j++)cyl(g,steel,sign*(w/2+thick*1.6),y-d*.04-j*d*.045,z-d*.07-j*d*.09,thick*1.2,thick*.7,'x')}
+ }
+ if(skeleton){
+  const ribs=Math.max(5,Math.round(w*spec.D/(spec.D*.105)));
+  for(let j=1;j<ribs;j++){const x=-w/2+j*w/ribs;const rib=curvedPlate(g,shell,thick*2.0,backMat);rib.position.x=x}
+  for(let j=1;j<6;j++){const q=surfaceCurve.getPoint(j/6);cyl(g,backMat,0,q.y,q.z,thick*1.3,w,'x')}
+ }else thickShell();
+ // Reinforced transverse header, lip, replaceable ground-engaging teeth.
+ const top=rim[0];box(g,backMat,0,top[1]+spec.H*.10,top[0]+spec.D*.025,w,thick*3.2,spec.D*.12);
+ const edgeLength=att===1?spec.D*.14:spec.D*.095;
+ box(g,worn,0,lip[1],lip[0]+edgeLength*.22,w,thick*2.0,edgeLength);
+ if(!skeleton){const strips=att===1?4:3;for(let i=0;i<strips;i++){const part=curvedPlate(g,shell.slice(3,-1).map(([z,y])=>[z,y+thick*1.1]),Math.max(thick*2,w*.075),worn);part.position.x=(i-(strips-1)/2)*w/(strips+.3)}}
+ for(let i=0;i<teeth;i++){
+  const x=(i-(teeth-1)/2)*w/(teeth+.18),tw=Math.min(w/(teeth+1)*.72,spec.D*.105),z0=lip[0]-spec.D*.065,z1=tip[1],y0=lip[1],y1=tip[0],th=thick*2.4;
+  box(g,backMat,x,y0,z0,tw*1.12,th*1.8,spec.D*.13);
+  const verts=[-tw/2,y0-th,z0,tw/2,y0-th,z0,tw/2,y0+th,z0,-tw/2,y0+th,z0,-tw*.34,y1-th*.15,z1,tw*.34,y1-th*.15,z1,tw*.34,y1+th*.15,z1,-tw*.34,y1+th*.15,z1];
+  const geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(verts,3));geo.setIndex([0,2,1,0,3,2,4,5,6,4,6,7,0,1,5,0,5,4,3,7,6,3,6,2,0,4,7,0,7,3,1,2,6,1,6,5]);geo.computeVertexNormals();mesh(g,geo,worn,x,0,0);
+ }
+ // Two real mounting ears with open pin bores, welded to the reinforced header.
+ const pinZ=spec.D*.23,pinY=-spec.H*.085,earT=thick*2.4;
+ for(const sign of [-1,1]){
+  const sh=new T.Shape();const r=pin*.95;sh.moveTo(-r,-r);sh.quadraticCurveTo(-r*1.3,r,-r*.1,r*1.12);sh.quadraticCurveTo(pinZ*.55,r*1.1,pinZ+r*.65,pinY+r*.80);sh.quadraticCurveTo(pinZ+r*1.15,pinY,pinZ+r*.45,pinY-r);sh.lineTo(top[0]+spec.D*.07,top[1]+spec.H*.13);sh.lineTo(-r,-r);sh.closePath();
+  for(const [z,y] of [[0,0],[pinZ,pinY]]){const hole=new T.Path();hole.absarc(z,y,pin*.52,0,Math.PI*2,true);sh.holes.push(hole)}
+  const geo=new T.ExtrudeGeometry(sh,{depth:earT,bevelEnabled:false});geo.translate(0,0,-earT/2);geo.rotateY(-Math.PI/2);mesh(g,geo,backMat,sign*(gap/2+earT/2),0,0);
+ }
+ cyl(g,steel,0,0,0,pin*.50,gap+earT*2,'x');cyl(g,steel,0,pinY,pinZ,pin*.50,gap+earT*2,'x');
+ return g;
 }
-if(skeleton){for(let j=0;j<8;j++){let rib=curvedPlate(g,profile,.032,bucketSteel);rib.position.x=(j-3.5)*w/8}for(let i=1;i<profile.length-1;i++){const [z,y]=profile[i],o=box(g,bucketSteel,0,y,z,w,.038,.044);o.rotation.x=-Math.atan2(profile[i+1][1]-profile[i-1][1],profile[i+1][0]-profile[i-1][0])}}
-else {curvedPlate(g,profile,w,bucketSteel);curvedPlate(g,profile.map(([z,y])=>[z,y-.018]),w-.05,worn)}
-box(g,bucketSteel,0,-.065,.065,Math.min(.30,w*.78),.11,.18);
-const lip=box(g,worn,0,.18,.79,w,.045,.10);lip.rotation.x=.23;if(!teeth){box(g,bucketSteel,0,.375,.40,w,.035,.28);box(g,worn,0,.18,.805,w,.023,.075)}
-for(let j=0;j<(skeleton?0:3);j++){let strip=curvedPlate(g,[[.05,.23],[.17,.345],[.32,.41],[.49,.40],[.62,.335]],.047,worn);strip.position.x=(j-1)*w/3}
-for(let i=0;i<teeth;i++){
- const xx=(i-(teeth-1)/2)*w/(teeth+.5);
- box(g,bucketSteel,xx,.19,.80,.085,.070,.115);
- // tapered tooth: broad adapter, narrow cutting tip
- const vertices=[-.045,.15,.78,.045,.15,.78,.045,.23,.78,-.045,.23,.78,-.019,.25,.97,.019,.25,.97,.019,.265,.97,-.019,.265,.97];
- const geom=new T.BufferGeometry();geom.setAttribute('position',new T.Float32BufferAttribute(vertices,3));geom.setIndex([0,2,1,0,3,2,4,5,6,4,6,7,0,1,5,0,5,4,3,7,6,3,6,2,0,4,7,0,7,3,1,2,6,1,6,5]);geom.computeVertexNormals();mesh(g,geom,worn,xx,0,0);
+let bucketKey='';
+function rebuildBuckets(s){const key=machineProfile(s).id;if(key===bucketKey)return;bucketKey=key;
+ for(const att of [0,1,2,5]){if(tools[att]){tool.remove(tools[att]);tools[att].traverse(o=>{if(o.geometry)o.geometry.dispose()})}tools[att]=bucket(bucketSpec(s,att))}
 }
-for(const xx of [-.15,.15]){
- extrude(g,bucketSteel,[[-.08,-.04],[.18,-.12],[.28,.04],[.07,.13]],.052,xx,0,0,.011);
- cyl(g,worn,xx,.015,.03,.065,.075,'x');cyl(g,worn,xx,-.06,.20,.052,.068,'x');
-}
-cyl(g,steel,0,.015,.03,.045,.36,'x');cyl(g,chrome,0,-.06,.20,.037,.36,'x');return g}
-tools[0]=bucket(.77,5);tools[1]=bucket(1.30,0);tools[2]=bucket(.38,3);tools[5]=bucket(.82,4,true);
-const attachmentPaint=mat(0x225b83,.48,.25), jawSteel=mat(0x4d5355,.65,.55), jawEdge=mat(0x858983,.47,.65);
+const attachmentPaint=mat(0xd65b23,.48,.25), jawSteel=mat(0x4d5355,.65,.55), jawEdge=mat(0x858983,.47,.65);
 function mount(g,w=.32){for(const x of [-w/2,w/2]){extrude(g,attachmentPaint,[[-.10,-.07],[.12,-.15],[.24,-.08],[.24,.09],[.06,.12],[-.10,.07]],.065,x,0,0,.016);cyl(g,worn,x,0,0,.082,.076,'x');cyl(g,worn,x,-.05,.18,.065,.076,'x')}cyl(g,chrome,0,0,0,.045,w+.12,'x');cyl(g,chrome,0,-.05,.18,.037,w+.12,'x')}
 const breaker=group(tool);mount(breaker,.30);
 extrude(breaker,attachmentPaint,[[.12,-.15],[.27,-.20],[.82,-.20],[.96,-.12],[.96,.12],[.82,.20],[.27,.20],[.12,.15]],.34,0,0,0,.025);
@@ -133,7 +192,7 @@ function updateJawCylinder(c){const end=c.end.clone().applyAxisAngle(v(1,0,0),c.
 const fork=group(tool);mount(fork,.31);box(fork,attachmentPaint,0,0,.24,.42,.30,.30);
 const forkLow=hinge(fork,.12,.30),forkHigh=hinge(fork,-.12,.30);
 const tine=[[0,-.06],[.24,-.10],[.47,-.16],[.65,-.25],[.76,-.37],[.70,-.40],[.58,-.30],[.40,-.07],[.18,.08],[0,.08]];
-for(const [j,sign,xs] of [[forkLow,1,[-.24,.24]],[forkHigh,-1,[-.24,0,.24]]]){for(const x of xs)extrude(j,jawSteel,tine.map(([z,y])=>[z,y*sign]),.085,x,0,0,.015);box(j,steel,0,0,.13,.58,.12,.12)}
+for(const [j,sign,xs] of [[forkLow,1,[-.15,.15]],[forkHigh,-1,[-.29,0,.29]]]){for(const x of xs)extrude(j,jawSteel,tine.map(([z,y])=>[z,y*sign]),.085,x,0,0,.015);box(j,steel,0,0,.13,.58,.12,.12)}
 mechanisms.push({att:4,joints:[{j:forkLow,sign:-1,open:.52},{j:forkHigh,sign:1,open:.52}],cylinders:[jawCylinder(fork,0,[-.09,.13],forkHigh,[.03,.21])]});tools[4]=fork;
 // Primary demolition crusher: two moving curved jaws, twin hydraulic rams.
 const crusher=group(tool);mount(crusher,.34);cyl(crusher,attachmentPaint,0,0,.22,.245,.14,'z');box(crusher,attachmentPaint,0,0,.40,.46,.40,.30);
@@ -154,14 +213,14 @@ const intake=new T.InstancedMesh(clodGeo,clodMat,64),falling=new T.InstancedMesh
 intake.count=falling.count=0;intake.frustumCulled=falling.frustumCulled=false;tool.add(intake);scene.add(falling);
 const clodDummy=new T.Object3D(),incoming=[],drops=[];
 let pendingCut=0,workMode='';let soil=0,previousTip=null,previousK=null,previousA=null,lastSoilInfo='',dumping=false,lastFillTime=-1,lastFill=-1,spillDelay=0;
-const cavity=[[-.045,.045],[.035,.19],[.17,.315],[.32,.365],[.49,.355],[.62,.29],[.74,.21],[.765,.17],[.12,-.075]];
+let cavity=[],fillSpec=null;function cavityFor(q){return [...q.shell.map(([z,y])=>[z,y-q.thick*1.2]),...q.rim.slice(1,-1).reverse()]};
 function area(poly){let sum=0;for(let i=0;i<poly.length;i++){let a=poly[i],b=poly[(i+1)%poly.length];sum+=a[0]*b[1]-a[1]*b[0]}return Math.abs(sum)*.5}
 function clipFill(poly,ny,nz,level){let out=[];for(let i=0;i<poly.length;i++){const a=poly[i],b=poly[(i+1)%poly.length],da=a[1]*ny+a[0]*nz-level,db=b[1]*ny+b[0]*nz-level;if(da<=0)out.push(a);if((da<=0)!==(db<=0)){let t=da/(da-db);out.push([a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t])}}return out}
 function fillPolygon(f,ny,nz){let lo=Infinity,hi=-Infinity;for(const [z,y] of cavity){let h=y*ny+z*nz;lo=Math.min(lo,h);hi=Math.max(hi,h)}let target=area(cavity)*Math.max(0,Math.min(.96,f*.96));for(let i=0;i<15;i++){let mid=(lo+hi)/2;if(area(clipFill(cavity,ny,nz,mid))<target)lo=mid;else hi=mid}return clipFill(cavity,ny,nz,(lo+hi)/2)}
-function updateFill(f,bw,ny,nz,now){carried.visible=f>.002;if(!carried.visible)return;if(now-lastFillTime<75&&Math.abs(f-lastFill)<.035)return;lastFillTime=now;lastFill=f;let points=fillPolygon(f,ny,nz);if(points.length<3)return;const sh=new T.Shape();points.forEach(([z,y],i)=>i?sh.lineTo(z,y):sh.moveTo(z,y));sh.closePath();const g=new T.ExtrudeGeometry(sh,{depth:Math.max(.08,bw-.10),bevelEnabled:false});g.translate(0,0,-(bw-.10)/2);g.rotateY(-Math.PI/2);g.computeVertexNormals();carried.geometry.dispose();carried.geometry=g}
-function spawnIntake(amount,bw,scale,cap,tipY,tipZ){if(amount<=0)return;let n=Math.min(5,Math.max(1,Math.ceil(amount/(cap*.012))));while(n--&&incoming.length<64){let xx=(rnd()-.5)*bw*.80;incoming.push({t:0,life:.22+rnd()*.22,start:v(xx,tipY-.025,tipZ),end:v(xx*.65,.22,.30+rnd()*.16),size:.025+rnd()*.035,amount:amount/Math.min(5,Math.max(1,Math.ceil(amount/(cap*.012))))})}}
+function updateFill(f,bw,ny,nz,now){carried.visible=f>.002;if(!carried.visible)return;if(now-lastFillTime<75&&Math.abs(f-lastFill)<.035)return;lastFillTime=now;lastFill=f;let points=fillPolygon(f,ny,nz);if(points.length<3)return;const sh=new T.Shape();points.forEach(([z,y],i)=>i?sh.lineTo(z,y):sh.moveTo(z,y));sh.closePath();const innerW=Math.max(.04,bw-(fillSpec?.thick||.02)*3);const g=new T.ExtrudeGeometry(sh,{depth:innerW,bevelEnabled:false});g.translate(0,0,-innerW/2);g.rotateY(-Math.PI/2);g.computeVertexNormals();carried.geometry.dispose();carried.geometry=g}
+function spawnIntake(amount,bw,scale,cap,tipY,tipZ){if(amount<=0)return;let n=Math.min(5,Math.max(1,Math.ceil(amount/(cap*.012))));while(n--&&incoming.length<64){let xx=(rnd()-.5)*bw*.80;incoming.push({t:0,life:.22+rnd()*.22,start:v(xx,tipY-.025,tipZ),end:v(xx*.65,fillSpec?fillSpec.shell[4][1]*.72:.22,fillSpec?fillSpec.D*(.35+rnd()*.15):.35),size:.025+rnd()*.035,amount:amount/Math.min(5,Math.max(1,Math.ceil(amount/(cap*.012))))})}}
 function deposit(xx,zz,amount,radius){let cells=[],total=0;brush(xx,zz,radius,(i,w)=>{cells.push([i,w]);total+=w});if(total<=0)return false;for(const [i,w] of cells)change(i,heights[i]+amount*w/total/(step*step));return true}
-function launchDrops(amount,bw,s,cap){if(amount<=0||drops.length>=96)return 0;let n=Math.min(96-drops.length,Math.max(1,Math.min(5,Math.ceil(amount/(cap*.018)))));for(let i=0;i<n;i++){let start=tool.localToWorld(v((rnd()-.5)*bw*.76,.10,.74+rnd()*.10));let end=tool.localToWorld(v(0,-.32,.95)),origin=tool.localToWorld(v(0,0,0));let vel=end.sub(origin).normalize().multiplyScalar(.18+rnd()*.45);vel.y-=.15;drops.push({p:start,vel,amount:amount/n,r:Math.max(.025,Math.cbrt(amount/n)*.42),life:0,spread:Math.max(.28,bw*s.scale*.62)})}return amount}
+function launchDrops(amount,bw,s,cap){if(amount<=0||drops.length>=96)return 0;let n=Math.min(96-drops.length,Math.max(1,Math.min(5,Math.ceil(amount/(cap*.018)))));for(let i=0;i<n;i++){let start=tool.localToWorld(v((rnd()-.5)*bw*.76,fillSpec?fillSpec.lip[1]:.10,fillSpec?fillSpec.lip[0]:.74));let end=tool.localToWorld(v(0,fillSpec?fillSpec.lip[1]+fillSpec.normalY*.5:-.32,fillSpec?fillSpec.lip[0]+fillSpec.normalZ*.5:.95)),origin=tool.localToWorld(v(0,0,0));let vel=end.sub(origin).normalize().multiplyScalar(.18+rnd()*.45);vel.y-=.15;drops.push({p:start,vel,amount:amount/n,r:Math.max(.025,Math.cbrt(amount/n)*.42),life:0,spread:Math.max(.28,bw*s.scale*.62)})}return amount}
 function animateSoil(dt){let transit=0;for(let i=incoming.length-1;i>=0;i--){let p=incoming[i];p.t+=dt;if(p.t>=p.life)incoming.splice(i,1);else transit+=p.amount*(1-p.t/p.life)}intake.count=incoming.length;incoming.forEach((p,i)=>{let t=p.t/p.life,sm=t*t*(3-2*t);clodDummy.position.copy(p.start).lerp(p.end,sm);clodDummy.position.y-=Math.sin(t*Math.PI)*.13;clodDummy.scale.set(p.size,p.size*.8,p.size*.9);clodDummy.rotation.set(t*3,i,t*5);clodDummy.updateMatrix();intake.setMatrixAt(i,clodDummy.matrix)});intake.instanceMatrix.needsUpdate=true;
 for(let i=drops.length-1;i>=0;i--){let p=drops[i];p.life+=dt;p.vel.y-=9.81*dt;p.p.addScaledVector(p.vel,dt);if(p.p.y<=heightAt(p.p.x,p.p.z)+p.r*.4||p.life>4){if(!deposit(p.p.x,p.p.z,p.amount,p.spread))deposit(Math.max(-half+.5,Math.min(half-.5,p.p.x)),Math.max(-half+.5,Math.min(half-.5,p.p.z)),p.amount,p.spread);drops.splice(i,1)}}falling.count=drops.length;drops.forEach((p,i)=>{clodDummy.position.copy(p.p);clodDummy.scale.set(p.r,p.r*.85,p.r*.9);clodDummy.rotation.set(p.life*5,i,p.life*3);clodDummy.updateMatrix();falling.setMatrixAt(i,clodDummy.matrix)});falling.instanceMatrix.needsUpdate=true;return transit}
 function resetTerrain(){heights.set(initial);for(let i=0;i<pos.count;i++){pos.setY(i,heights[i]);paintVertex(i)}pos.needsUpdate=true;geo.attributes.color.needsUpdate=true;geo.computeVertexNormals();soil=0;pendingCut=0;workMode='';previousTip=null;previousK=null;previousA=null;dumping=false;spillDelay=0;carried.visible=false;incoming.length=drops.length=0;intake.count=falling.count=0;dirty=false;unstable.clear();lastSoilInfo='';lastFill=-1;lastFillTime=-1}
@@ -175,6 +234,7 @@ function scoopTravel(b,a,k,oldA,oldK,tipY,tipZ){
 }
 
 const bucketWidths=[.77,1.30,.38,0,0,.82,0,0];
+function samplesFor(s){const q=bucketSpec(s);if(!q)return toolSamples[s.att]||[];const points=[];for(const x of [-q.W*.49,0,q.W*.49]){for(const [z,y] of q.shell.slice(0,-1))points.push([x,y,z,0]);points.push([x,q.lip[1],q.lip[0],1],[x,q.tip[0],q.tip[1],1]);}return points}
 const toolSamples=Array.from({length:8},(_,att)=>{
  const points=[],bw=bucketWidths[att];
  if(bw){for(const xx of [-bw*.48,0,bw*.48]){
@@ -194,7 +254,7 @@ function collisionDepth(s,cutting){
   const lx=X+xx,wx=-s.x-sc*(lx*cs+zz*sn),wz=s.z+sc*(-lx*sn+zz*cs),wy=baseY+sc*yy;
   worst=Math.max(worst,heightAt(wx,wz)-wy-allow*sc);
  }
- for(const [xx,yy,zz,lip] of toolSamples[s.att]||[]){sample(xx,hy+yy*Math.cos(angle)+zz*Math.sin(angle),hz-yy*Math.sin(angle)+zz*Math.cos(angle),lip?(cutting?.12:.035):.018)}
+ for(const [xx,yy,zz,lip] of samplesFor(s)){sample(xx,hy+yy*Math.cos(angle)+zz*Math.sin(angle),hz-yy*Math.sin(angle)+zz*Math.cos(angle),lip?(cutting?.12:.035):.018)}
  for(const frac of [.18,.42,.70,.96]){const d=A*frac;sample(0,Y+B*Math.sin(s.b)+d*Math.sin(armAngle)-.12,Z+B*Math.cos(s.b)+d*Math.cos(armAngle),.015)}
  return worst;
 }
@@ -207,19 +267,16 @@ function toolPoint(s,xx,yy,zz){
 
  // Lip, belly and rigid sides are separate contact surfaces.
 function contactProfile(s){
- const bw=bucketWidths[s.att];if(!bw)return null;
- const ty=s.att===1?.18:.26,tz=s.att===1?.79:.97;
- const lip=toolPoint(s,0,ty,tz),back=toolPoint(s,0,.39,.32);
+ const q=bucketSpec(s);if(!q)return null;const bw=q.W,[ty,tz]=q.tip;
+ const lip=toolPoint(s,0,ty,tz),back=toolPoint(s,0,q.shell[4][1],q.shell[4][0]);
  const t=s.yaw+s.swing,axis={x:-Math.cos(t),z:-Math.sin(t)};
  let edgeGap=Infinity,backGap=Infinity,lowestBack=back;
- for(const f of [-.45,0,.45]){
+ for(const f of [-.47,0,.47]){
   const p=toolPoint(s,bw*f,ty,tz);edgeGap=Math.min(edgeGap,p.y-heightAt(p.x,p.z));
-  for(const [z,y] of [[.16,.32],[.32,.39],[.49,.38],[.63,.31]]){
-   const p=toolPoint(s,bw*f,y,z);const gap=p.y-heightAt(p.x,p.z);if(gap<backGap){backGap=gap;lowestBack=p}
-  }
+  for(const [z,y] of q.shell.slice(1,-1)){const pt=toolPoint(s,bw*f,y,z),gap=pt.y-heightAt(pt.x,pt.z);if(gap<backGap){backGap=gap;lowestBack=pt}}
  }
  const angle=s.b+s.a+s.k,backDown=Math.cos(angle)<-.10;
- return {bw,lip,back:lowestBack,axis,edgeGap,backGap,backDown};
+ return {bw,lip,back:lowestBack,axis,edgeGap,backGap,backDown,ny:q.normalY,nz:q.normalZ};
 }
 function redistribute(p,axis,width,amount,dx,dz){
  if(amount<=0)return;
@@ -243,7 +300,7 @@ function preCut(prev,next){
  const actuated=Math.abs(next.a-prev.a)+Math.abs(next.k-prev.k)>1e-8;
  const closing=next.k<prev.k-1e-8,pulling=next.a<prev.a-1e-8;
  const angle=next.b+next.a+next.k;
- const mouthZ=.9*Math.sin(angle)+.44*Math.cos(angle),t=next.yaw+next.swing;
+ const mouthZ=-p.ny*Math.sin(angle)+p.nz*Math.cos(angle),t=next.yaw+next.swing;
  const leading=(-Math.sin(t)*dx+Math.cos(t)*dz)*mouthZ;
  // A low back is a solid contact, not a cutting edge. Shallow horizontal
  // sliding on the belly may shave humps; it can never collect soil.
@@ -261,7 +318,7 @@ function preCut(prev,next){
  }
  if(backFirst||p.edgeGap>.025*next.scale||travel<1e-7||!actuated)return '';
  // Use the actual lip only; a closed bucket back or side cannot excavate.
- const mouthY=-.9*Math.cos(angle)+.44*Math.sin(angle);const intoMouth=leading+dy*mouthY;
+ const mouthY=p.ny*Math.cos(angle)+p.nz*Math.sin(angle);const intoMouth=leading+dy*mouthY;
  const cut=(closing||pulling)&&intoMouth>travel*.08&&!movingAgainstMouth;
  if(!cut)return '';
  const shallow=Math.abs(dy)<horiz*.65&&p.edgeGap>-.12*next.scale;
@@ -313,26 +370,26 @@ function cutEdge(center,axis,width,travel,scale,bite){
  return removed;
 }
 function retainedFraction(ny,nz){
- const mouthUp=-.9*ny+.44*nz;
+ const mouthUp=(fillSpec?.normalY??-.9)*ny+(fillSpec?.normalZ??.44)*nz;
  if(mouthUp>=.10)return 1;
  const repose=Math.min(.50,Math.max(0,.48*(1+mouthUp)));
  const ey=ny-.9*repose,ez=nz+.44*repose;
- const lip1=cavity[cavity.length-1],lip2=cavity[cavity.length-2];
+ const lip1=fillSpec.rim[0],lip2=fillSpec.lip;
  const level=Math.min(lip1[1]*ey+lip1[0]*ez,lip2[1]*ey+lip2[0]*ez);
  return Math.max(0,Math.min(1,area(clipFill(cavity,ey,ez,level))/area(cavity)));
 }
 function soilStep(s){
 const dt=Math.max(0,Math.min(.075,s.dt||0));const bucket=[0,1,2,5].includes(s.att),capacity=Math.max(.01,machineProfile(s).capacity*([1,1.15,.55,0,0,.8,0,0][s.att]||1));
-const tipY=s.att===1?.18:.26,tipZ=s.att===1?.79:.97;
+const spec=bucketSpec(s);if(spec){fillSpec=spec;cavity=cavityFor(spec)}const tipY=spec?.tip[0]??.26,tipZ=spec?.tip[1]??.97;
 const tooth=tool.localToWorld(v(0,tipY,tipZ));
 const dk=previousK===null?0:s.k-previousK;
 const scoop=scoopTravel(s.b,s.a,s.k,previousA,previousK,tipY,tipZ)*s.scale;
-const mouth=tool.localToWorld(v(0,-.9,.44)).sub(tool.localToWorld(v(0,0,0))).normalize();
+const mouth=tool.localToWorld(v(0,spec?.normalY??-.9,spec?.normalZ??.44)).sub(tool.localToWorld(v(0,0,0))).normalize();
 const displacement=previousTip?tooth.clone().sub(previousTip):v(0,0,0);
 const movement=displacement.length(),cutTravel=Math.min(scoop,Math.max(0,displacement.dot(mouth)));
 previousK=s.k;previousA=s.a;
 if(s.active&&s.engine&&s.unlocked&&bucket&&dt>0){
-const bw=bucketWidths[s.att],width=bw*s.scale,radius=Math.max(step*1.2,width*.55);
+const bw=spec.W,width=bw*s.scale,radius=Math.max(step*1.2,width*.55);
 const surface=heightAt(tooth.x,tooth.z),angle=s.b+s.a+s.k;
 const axis=tool.localToWorld(v(1,0,0)).sub(tool.localToWorld(v(0,0,0)));axis.y=0;axis.normalize();
 const isCutting=pendingCut>0||(previousTip&&cutTravel>1e-7&&dk<=.00005&&tooth.y<surface+.025*s.scale);
@@ -344,7 +401,7 @@ if(dumping){const amount=Math.min(soil-stableVolume,capacity*dt*(.3+Math.max(0,-
 if(pendingCut>0){spawnIntake(pendingCut,bw,s.scale,capacity,tipY,tipZ);pendingCut=0}
 }
 previousTip=tooth.clone();
-const transit=animateSoil(dt),bw=([.77,1.30,.38,0,0,.82][s.att]||.77),angle=s.b+s.a+s.k;
+const transit=animateSoil(dt),bw=spec?.W??.77,angle=s.b+s.a+s.k;
 updateFill(bucket?Math.min(1,Math.max(0,soil-transit)/capacity):0,bw,Math.cos(angle),Math.sin(angle),performance.now());
 relaxSoil(dt);refreshTerrain();
 let info=bucket?'土量 '+Math.round(soil*1000)/1000+' / '+Math.round(capacity*1000)/1000+' m³':'掘削用バケットに交換';if(workMode)info+=' / '+workMode;if(s.contact)info+=' / 接地・負荷';if(info!==lastSoilInfo){lastSoilInfo=info;document.getElementById('soilInfo').textContent=info}
@@ -352,7 +409,7 @@ let info=bucket?'土量 '+Math.round(soil*1000)/1000+' / '+Math.round(capacity*1
 let width=0,height=0,profileKey='';
 
 function draw(s){const w=canvas.clientWidth,h=canvas.clientHeight;if(w!==width||h!==height){width=w;height=h;renderer.setSize(w,h,false);camera.aspect=w/Math.max(1,h);camera.fov=2*Math.atan(Math.max(Math.tan(29*Math.PI/180),Math.tan(27*Math.PI/180)/camera.aspect))*180/Math.PI;camera.fov=Math.min(108,camera.fov);camera.updateProjectionMatrix()}const {p,sc,B,A,X,Y,Z}=rig(s);
-if(profileKey!==p.id){profileKey=p.id;
+if(profileKey!==p.id){profileKey=p.id;rebuildBuckets(s);lastFill=-1;lastFillTime=-1;
  const deck=p.deck/sc,roof=p.height/sc,bodyW=p.width/sc;
  undercarriage.scale.set(bodyW/2.29,deck/1.02,p.track/sc/3.0);
  for(let i=0;i<trackGroups.length;i++){const tg=trackGroups[i];tg.position.x=(i?1:-1)*(p.width-p.shoe)/2/sc;tg.scale.set(p.shoe/sc/.63,deck/1.02,p.track/sc/3.0)}

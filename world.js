@@ -9,6 +9,13 @@ const MACHINE_PROFILES=[
  {id:'SK200',nominal:.70,capacity:.80,width:2.80,height:3.01,shoe:.60,track:4.17,boom:5.65,arm:2.94,bucket:1.08,tail:2.75,deck:1.35,pivot:1.85,front:.76,mini:false,open:false,cabW:1.00,cabD:1.48},
  {id:'SK330',nominal:1.20,capacity:1.40,width:3.19,height:3.30,shoe:.60,track:4.95,boom:6.50,arm:3.30,bucket:1.40,tail:3.25,deck:1.49,pivot:2.05,front:.84,mini:false,open:false,cabW:1.05,cabD:1.55}
 ];
+// Catalog bucket/arm forces kN (SK10 arm estimate). Effective soil parameters are simulation values.
+const DIG_FORCE=[[13.7,8.5],[32.2,22.4],[35.6,24.8],[60.2,39.4],[105.4,64],[143,102],[222,163]];
+const GROUND_TYPES=[{name:'軟らかい土',resistance:35,weight:16},{name:'普通土',resistance:75,weight:18},{name:'締まった土',resistance:230,weight:20},{name:'硬質地盤',resistance:520,weight:22},{name:'岩盤',resistance:2600,weight:25}];
+function groundType(s){return GROUND_TYPES[Number(s.groundType??1)]||GROUND_TYPES[1]}
+function diggingForce(s,width,armWeight=.7){const [bucket,arm]=DIG_FORCE[MACHINE_PROFILES.indexOf(machineProfile(s))],posture=.78+.22*(1-Math.abs(Math.cos(s.b+s.a)));return Math.max(.1,(armWeight*arm+(1-armWeight)*bucket)*posture)}
+function soilResistance(s,width,depth){const g=groundType(s);return width*(g.resistance*depth+g.weight*2.5*depth*depth)}
+function maxBiteDepth(s,width,armWeight=.7){const g=groundType(s),f=diggingForce(s,width,armWeight)/Math.max(.05,width),a=g.weight*2.5;return 2*f/(g.resistance+Math.sqrt(g.resistance*g.resistance+4*a*f))}
 function machineProfile(s){return MACHINE_PROFILES.find(p=>Math.abs(p.nominal-Number(s.capacity))<.0001)||MACHINE_PROFILES[3]}
 function rig(s){const p=machineProfile(s),sc=s.scale||1;return {p,sc,B:p.boom/sc,A:p.arm/sc,Y:p.pivot/sc,Z:p.front/sc,X:(p.width*.17)/sc}}
 
@@ -445,7 +452,7 @@ const clodGeo=new T.IcosahedronGeometry(1,1),clodMat=weathered(mat(0x927556,1),2
 const intake=new T.InstancedMesh(clodGeo,clodMat,64),falling=new T.InstancedMesh(clodGeo,clodMat,96);
 intake.count=falling.count=0;intake.frustumCulled=falling.frustumCulled=false;tool.add(intake);scene.add(falling);
 const clodDummy=new T.Object3D(),incoming=[],drops=[];
-let pendingCut=0,workMode='';let soil=0,previousTip=null,previousK=null,previousA=null,lastSoilInfo='',dumping=false,lastFillTime=-1,lastFill=-1,spillDelay=0;
+let pendingCut=0,workMode='',excavationLoad=0;let soil=0,previousTip=null,previousK=null,previousA=null,lastSoilInfo='',dumping=false,lastFillTime=-1,lastFill=-1,spillDelay=0;
 let cavity=[],fillSpec=null;function cavityFor(q){return [...q.shell.map(([z,y])=>[z,y-q.thick*1.2]),...q.rim.slice(1,-1).reverse()]};
 function area(poly){let sum=0;for(let i=0;i<poly.length;i++){let a=poly[i],b=poly[(i+1)%poly.length];sum+=a[0]*b[1]-a[1]*b[0]}return Math.abs(sum)*.5}
 function clipFill(poly,ny,nz,level){let out=[];for(let i=0;i<poly.length;i++){const a=poly[i],b=poly[(i+1)%poly.length],da=a[1]*ny+a[0]*nz-level,db=b[1]*ny+b[0]*nz-level;if(da<=0)out.push(a);if((da<=0)!==(db<=0)){let t=da/(da-db);out.push([a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t])}}return out}
@@ -455,7 +462,7 @@ function deposit(xx,zz,amount,radius){let cells=[],total=0;brush(xx,zz,radius,(i
 function launchDrops(amount,bw,s,cap){if(amount<=0||drops.length>=96)return 0;let n=Math.min(96-drops.length,Math.max(1,Math.min(12,Math.ceil(amount/(cap*.006)))));for(let i=0;i<n;i++){let start=tool.localToWorld(v((rnd()-.5)*bw*.76,fillSpec?fillSpec.lip[1]:.10,fillSpec?fillSpec.lip[0]:.74));let end=tool.localToWorld(v(0,fillSpec?fillSpec.lip[1]+fillSpec.normalY*.5:-.32,fillSpec?fillSpec.lip[0]+fillSpec.normalZ*.5:.95)),origin=tool.localToWorld(v(0,0,0));let vel=end.sub(origin).normalize().multiplyScalar(.18+rnd()*.45);vel.y-=.15;drops.push({p:start,vel,amount:amount/n,r:Math.max(.012,Math.cbrt(amount/n)*.48),life:0,spread:Math.max(step*1.15,bw*s.scale*.18)})}return amount}
 function animateSoil(dt){intake.count=0;incoming.length=0;
 for(let i=drops.length-1;i>=0;i--){let p=drops[i];p.life+=dt;p.vel.y-=9.81*dt;p.p.addScaledVector(p.vel,dt);if(p.p.y<=heightAt(p.p.x,p.p.z)+p.r*.4||p.life>4){if(!deposit(p.p.x,p.p.z,p.amount,p.spread))deposit(Math.max(-half+.5,Math.min(half-.5,p.p.x)),Math.max(-half+.5,Math.min(half-.5,p.p.z)),p.amount,p.spread);drops.splice(i,1)}}falling.count=drops.length;drops.forEach((p,i)=>{clodDummy.position.copy(p.p);clodDummy.scale.set(p.r,p.r*.85,p.r*.9);clodDummy.rotation.set(p.life*5,i,p.life*3);clodDummy.updateMatrix();falling.setMatrixAt(i,clodDummy.matrix)});falling.instanceMatrix.needsUpdate=true;}
-function resetTerrain(){heights.set(initial);for(let i=0;i<pos.count;i++){pos.setY(i,heights[i]);paintVertex(i)}pos.needsUpdate=true;geo.attributes.color.needsUpdate=true;geo.computeVertexNormals();soil=0;pendingCut=0;workMode='';previousTip=null;previousK=null;previousA=null;dumping=false;spillDelay=0;carried.visible=false;incoming.length=drops.length=0;intake.count=falling.count=0;dirty=false;unstable.clear();lastSoilInfo='';lastFill=-1;lastFillTime=-1}
+function resetTerrain(){heights.set(initial);for(let i=0;i<pos.count;i++){pos.setY(i,heights[i]);paintVertex(i)}pos.needsUpdate=true;geo.attributes.color.needsUpdate=true;geo.computeVertexNormals();soil=0;pendingCut=0;workMode='';excavationLoad=0;previousTip=null;previousK=null;previousA=null;dumping=false;spillDelay=0;carried.visible=false;incoming.length=drops.length=0;intake.count=falling.count=0;dirty=false;unstable.clear();lastSoilInfo='';lastFill=-1;lastFillTime=-1}
 // Isolate arm/bucket cutting travel from boom, swing and track motion.
 function scoopTravel(b,a,k,oldA,oldK,tipY,tipZ){
  if(oldA===null||oldK===null||!(a<oldA-1e-8||k<oldK-1e-8))return 0;
@@ -486,7 +493,7 @@ function collisionDepth(s,cutting){
   const lx=X+xx,wx=-s.x-sc*(lx*cs+zz*sn),wz=s.z+sc*(-lx*sn+zz*cs),wy=baseY+sc*yy;
   worst=Math.max(worst,heightAt(wx,wz)-wy-allow*sc);
  }
- for(const [xx,yy,zz,lip] of samplesFor(s)){sample(xx,hy+yy*Math.cos(angle)+zz*Math.sin(angle),hz-yy*Math.sin(angle)+zz*Math.cos(angle),lip?(cutting?.16:.035):.018)}
+ for(const [xx,yy,zz,lip] of samplesFor(s)){sample(xx,hy+yy*Math.cos(angle)+zz*Math.sin(angle),hz-yy*Math.sin(angle)+zz*Math.cos(angle),lip?(cutting?.22:.035):(cutting?.075:.018))}
  for(const frac of [.18,.42,.70,.96]){const d=A*frac;sample(0,Y+B*Math.sin(s.b)+d*Math.sin(armAngle)-.12,Z+B*Math.cos(s.b)+d*Math.cos(armAngle),.015)}
  return worst;
 }
@@ -535,7 +542,7 @@ function preCut(prev,next){
  const mouthZ=-p.ny*Math.sin(angle)+p.nz*Math.cos(angle),mouthY=p.ny*Math.cos(angle)+p.nz*Math.sin(angle);
  const into=forward*mouthZ+dy*mouthY;
  const shallow=horiz>1e-7&&Math.abs(dy)<horiz*.70;
- const lipFirst=p.edgeGap<p.backGap-.008*sc;
+ const lipFirst=p.edgeGap<p.backGap-.006*sc;
  const shallowCut=shallow&&pulling&&forward<0&&mouthZ<-.10&&lipFirst&&p.edgeGap<.012*sc&&p.edgeGap>-.20*sc;
  const deepCut=(closing||pulling)&&into>travel*.065&&p.edgeGap<.012*sc&&lipFirst;
  const heel=p.backGap<.045*sc&&(p.backGap<=p.edgeGap+.008*sc||(!shallowCut&&!deepCut&&p.backDown));
@@ -548,6 +555,7 @@ function preCut(prev,next){
   }return '背面接地';
  }
  if(!shallowCut&&!deepCut)return '';
+ const aw=Math.abs(next.a-prev.a)/(Math.abs(next.a-prev.a)+Math.abs(next.k-prev.k)+1e-9),bite=maxBiteDepth(next,width,aw);
  let removed=0,physical=0,count=Math.min(8,Math.max(1,Math.ceil(travel/(step*.25))));
  for(let j=1;j<=count;j++){
   const q={...next};for(const key of ['x','z','yaw','swing','b','a','k'])q[key]=prev[key]+(next[key]-prev[key])*j/count;
@@ -556,13 +564,14 @@ function preCut(prev,next){
   if(penetration<.0005*sc)continue;
   // The edge cuts only the strip it sweeps; soil volume is conserved.
   const advance=(shallowCut?Math.abs(forward):Math.max(0,into))/count;
-  const volume=width*advance*Math.min(penetration,.40*sc);
+  const depth=Math.min(penetration,bite),volume=width*advance*depth;
+  if(depth<=0)continue;
   physical+=volume;
-  removed+=editStrip(c.lip,c.axis,width,c.lip.y,Math.max(.001*sc,travel*1.8/count),travel/count+step*.30);
+  removed+=editStrip(c.lip,c.axis,width,c.lip.y+Math.max(0,penetration-bite),Math.max(.001*sc,travel*2.8/count),travel/count+step*.50);
  }
  if(removed<=0)return '';
  const cap=Math.max(.01,machineProfile(next).capacity*([1,1.15,.55,0,0,.8,0,0][next.att]||1));
- const collected=Math.min(Math.max(0,cap-soil),removed,physical*1.35);
+ const collected=Math.min(Math.max(0,cap-soil),removed,physical*1.65);
  soil+=collected;pendingCut+=collected;
  redistribute(p.lip,p.axis,width,removed-collected,dx,dz);
  return shallow?'鋤取り':'掘削';
@@ -572,7 +581,19 @@ function resolveMotion(prev,next){
  const keys=['x','z','yaw','swing','b','a','k'];
  if(keys.every(k=>Math.abs(next[k]-prev[k])<1e-9))return next;
  const before=soil,pendingBefore=pendingCut;
- const old=contactProfile(prev),target=contactProfile(next);
+ const old=contactProfile(prev);let target=contactProfile(next),load=0;
+ if(old&&target&&(next.a<prev.a-1e-8||next.k<prev.k-1e-8)){
+  const dx=target.lip.x-old.lip.x,dz=target.lip.z-old.lip.z,dy=target.lip.y-old.lip.y,travel=Math.hypot(dx,dz,dy),horizontal=Math.hypot(dx,dz),width=target.bw*next.scale;
+  const angle=next.b+next.a+next.k,t=next.yaw+next.swing,forward=-Math.sin(t)*dx+Math.cos(t)*dz,mz=-target.ny*Math.sin(angle)+target.nz*Math.cos(angle),my=target.ny*Math.cos(angle)+target.nz*Math.sin(angle);
+  if(travel>1e-7&&target.edgeGap<.008*next.scale&&target.edgeGap<target.backGap-.006*next.scale&&(forward*mz+dy*my>travel*.055||(forward<0&&mz<-.1&&Math.abs(dy)<horizontal*.7))){
+   const ux=horizontal>1e-7?dx/horizontal:Math.sin(t),uz=horizontal>1e-7?dz/horizontal:-Math.cos(t),aw=Math.abs(next.a-prev.a)/(Math.abs(next.a-prev.a)+Math.abs(next.k-prev.k)+1e-9);
+   const ahead=Math.max(step*.75,width*.16),surface=Math.max(heightAt(target.lip.x,target.lip.z),heightAt(target.lip.x+ux*ahead,target.lip.z+uz*ahead));
+   load=soilResistance(next,width,Math.max(0,surface-target.lip.y))/diggingForce(next,width,aw);
+   const factor=load>=1.04?0:load<=.35?1:Math.max(.08,1-(load-.35)/.69);
+   if(factor<1){const q={...next};for(const key of ['b','a','k'])q[key]=prev[key]+(next[key]-prev[key])*factor;next=q;target=contactProfile(next)}
+  }
+ }
+ excavationLoad=load;
  const isGrading=!!(old&&target&&target.backGap<.07*next.scale&&target.backGap<=target.edgeGap+(target.backDown?.055:.02)*next.scale&&Math.abs(next.a-prev.a)>1e-8);
  // A shallow, moving heel may compact/shave soil. A stationary bucket is solid.
  const permitted=isGrading?.045*next.scale:0;
@@ -657,7 +678,7 @@ previousTip=tooth.clone();
 animateSoil(dt);const bw=spec?.W??.77,angle=s.b+s.a+s.k;
 updateFill(bucket?Math.min(1,Math.max(0,soil)/capacity):0,bw,Math.cos(angle),Math.sin(angle),performance.now());
 relaxSoil(dt);refreshTerrain();
-let info=bucket?'土量 '+Math.round(soil*1000)/1000+' / '+Math.round(capacity*1000)/1000+' m³':'掘削用バケットに交換';if(workMode)info+=' / '+workMode;if(s.contact)info+=' / 接地・負荷';if(info!==lastSoilInfo){lastSoilInfo=info;document.getElementById('soilInfo').textContent=info}
+let info=bucket?'土量 '+Math.round(soil*1000)/1000+' / '+Math.round(capacity*1000)/1000+' m³':'掘削用バケットに交換';if(workMode)info+=' / '+workMode;if(excavationLoad>.35)info+=' / 負荷 '+Math.min(100,Math.round(excavationLoad*100))+'%';if(s.contact)info+=' / 接地';if(info!==lastSoilInfo){lastSoilInfo=info;document.getElementById('soilInfo').textContent=info}
 }
 let width=0,height=0,profileKey='';
 
@@ -687,7 +708,7 @@ if(profileKey!==p.id){profileKey=p.id;rebuildBuckets(s);lastFill=-1;lastFillTime
  undercarriage.visible=false;cadUnder.scale.set(p.width/sc/2.8,deck, p.track/sc/3.8244);for(const g of trackGroups)g.visible=false;buildTrackCAD(p,sc);
 }
 base.position.set(-s.x,heightAt(-s.x,s.z),s.z);base.rotation.y=-s.yaw;base.scale.set(-s.scale,s.scale,s.scale);upper.rotation.y=s.swing;boom.rotation.x=-s.b;arm.rotation.x=-s.a;tool.rotation.x=-s.k;tools.forEach((o,i)=>o.visible=i===s.att);applyHydraulic(s);chisel.position.z=.96;updateRams(s);flexLines(s,B,A);updateTrackCAD(s);const inside=s.cab&&s.active;const targetFov=inside?Math.min(110,2*Math.atan(Math.max(Math.tan(28*Math.PI/180),Math.tan(35*Math.PI/180)/camera.aspect))*180/Math.PI):Math.min(90,2*Math.atan(Math.max(Math.tan(25*Math.PI/180),Math.tan(30*Math.PI/180)/camera.aspect))*180/Math.PI);if(Math.abs(camera.fov-targetFov)>.01){camera.fov=targetFov;camera.updateProjectionMatrix()}
-base.updateMatrixWorld(true);soilStep(s);const local=(p,g=upper)=>g.localToWorld(p);if(inside){camera.position.copy(local(v(-.04,p.open?.79:.88,p.open?.04:-.10),cab));camera.lookAt(camera.position.clone().add(local(v(0,-.30,1),upper).sub(local(v(0,0,0),upper)).multiplyScalar(7)))}else{fitExteriorCamera(s)}camera.updateMatrixWorld();sun.position.set(-s.x-18,28,s.z+12);sun.target.position.set(-s.x,0,s.z);
+base.updateMatrixWorld(true);soilStep(s);const local=(p,g=upper)=>g.localToWorld(p);if(inside){camera.position.copy(local(v(-.04,p.open?.79:.88,p.open?.04:-.10),cab));const heading=s.lookYaw||0,pitch=-Math.atan(.30)+(s.lookPitch||0),direction=v(Math.sin(heading)*Math.cos(pitch),Math.sin(pitch),Math.cos(heading)*Math.cos(pitch));camera.lookAt(camera.position.clone().add(local(direction,upper).sub(local(v(0,0,0),upper)).multiplyScalar(7)))}else{fitExteriorCamera(s)}camera.updateMatrixWorld();sun.position.set(-s.x-18,28,s.z+12);sun.target.position.set(-s.x,0,s.z);
 const status=s.engine+'/'+s.unlocked;if(status!==lastDisplay){lastDisplay=status;dc.fillStyle='#14201c';dc.fillRect(0,0,256,192);dc.fillStyle=s.engine?'#a0e6a4':'#8a9993';dc.font='bold 23px monospace';dc.fillText(s.engine?'ENGINE ON':'STANDBY',15,40);dc.font='19px monospace';dc.fillText(s.unlocked?'HYD READY':'LOCKED',15,79);dc.fillStyle='#64746a';dc.fillRect(15,112,226,18);dc.fillStyle='#d3ba65';dc.fillRect(15,112,s.engine?155:10,18);dc.font='15px monospace';dc.fillText('FUEL    TEMP',15,155);displayTex.needsUpdate=true}
 if(renderFrame)renderer.render(scene,camera)}
 function inspect(s){
@@ -696,7 +717,7 @@ function inspect(s){
  let meshes=0,vertices=0,invalid=0;const bounds=new T.Box3();
  base.traverseVisible(o=>{if(!o.isMesh)return;meshes++;const a=o.geometry?.attributes?.position;if(!a)return;vertices+=a.count;const b=new T.Box3().setFromObject(o);if(!b.isEmpty()){for(const value of [...b.min.toArray(),...b.max.toArray()])if(!Number.isFinite(value))invalid++;bounds.union(b)}});
  const gl=renderer.getContext(),errors=[];for(let i=0;i<16;i++){const code=gl.getError();if(code===gl.NO_ERROR)break;errors.push(code)}
- let screenOverflow=0;if(!s.cab){for(const x of [exteriorBounds.min.x,exteriorBounds.max.x])for(const y of [exteriorBounds.min.y,exteriorBounds.max.y])for(const z of [exteriorBounds.min.z,exteriorBounds.max.z]){const q=v(x,y,z).project(camera);screenOverflow=Math.max(screenOverflow,Math.abs(q.x)-1,Math.abs(q.y)-1)}}return {lip:visual.toArray(),contact:contactProfile(s),angles:[s.b,s.a,s.k,s.swing],screenOverflow,model:machineProfile(s).id,attachment:s.att,view:s.cab?'cab':'outside',meshCount:meshes,vertexCount:vertices,invalidBounds:invalid,tipErrorM:gap,bounds:{min:bounds.min.toArray(),max:bounds.max.toArray()},camera:camera.position.toArray(),cameraDirection:camera.getWorldDirection(v(0,0,0)).toArray(),soil,terrainMin:Math.min(...heights),linkValid:linkGeometry(s).valid,webglErrors:errors,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles};
+ let screenOverflow=0;if(!s.cab){for(const x of [exteriorBounds.min.x,exteriorBounds.max.x])for(const y of [exteriorBounds.min.y,exteriorBounds.max.y])for(const z of [exteriorBounds.min.z,exteriorBounds.max.z]){const q=v(x,y,z).project(camera);screenOverflow=Math.max(screenOverflow,Math.abs(q.x)-1,Math.abs(q.y)-1)}}return {ground:groundType(s).name,diggingForce:DIG_FORCE[MACHINE_PROFILES.indexOf(machineProfile(s))],load:excavationLoad,lip:visual.toArray(),contact:contactProfile(s),angles:[s.b,s.a,s.k,s.swing],screenOverflow,model:machineProfile(s).id,attachment:s.att,view:s.cab?'cab':'outside',meshCount:meshes,vertexCount:vertices,invalidBounds:invalid,tipErrorM:gap,bounds:{min:bounds.min.toArray(),max:bounds.max.toArray()},camera:camera.position.toArray(),cameraDirection:camera.getWorldDirection(v(0,0,0)).toArray(),soil,terrainMin:Math.min(...heights),linkValid:linkGeometry(s).valid,webglErrors:errors,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles};
 }
 return {draw,resetTerrain,resolveMotion,inspect,photoAssetsReady};
 }

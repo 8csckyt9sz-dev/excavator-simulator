@@ -13,7 +13,7 @@ try{
  page=await browser.newPage({viewport:{width:960,height:440},deviceScaleFactor:1});page.on('pageerror',e=>report.errors.push(String(e)));page.on('console',m=>{if(m.type()==='error')report.errors.push(m.text())});
  // Pin the exact library version to the local npm installation, avoiding a CDN failure during CI.
  await page.route('**/three@0.160.1/build/three.min.js',route=>route.fulfill({path:path.join(root,'node_modules/three/build/three.min.js'),contentType:'application/javascript'}));
- await page.goto('http://127.0.0.1:'+server.address().port+'/?verify=1');await page.waitForFunction(()=>window.earthVerify!==undefined,{timeout:20000});
+ await page.goto('http://127.0.0.1:'+server.address().port+'/?verify=1');await page.waitForFunction(()=>window.earthVerify!==undefined,undefined,{timeout:20000});
  if(!await page.evaluate(()=>earthVerify.ready))throw Error('WebGL initialization failed');
  for(let m=0;m<7;m++)for(let a=0;a<8;a++){const d=await page.evaluate(o=>earthVerify.show(o),{machine:m,attachment:a});check(d);if(m===3||a===0)await shot('outside-'+m+'-'+a)}
  for(let m=0;m<7;m++){check(await page.evaluate(o=>earthVerify.show(o),{machine:m,attachment:0,cab:true}));await shot('cab-'+m)}

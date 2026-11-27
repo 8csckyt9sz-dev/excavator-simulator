@@ -114,7 +114,7 @@ const clodGeo=new T.IcosahedronGeometry(1,1),clodMat=mat(0x8d6c4e,1);
 const intake=new T.InstancedMesh(clodGeo,clodMat,64),falling=new T.InstancedMesh(clodGeo,clodMat,96);
 intake.count=falling.count=0;intake.frustumCulled=falling.frustumCulled=false;tool.add(intake);scene.add(falling);
 const clodDummy=new T.Object3D(),incoming=[],drops=[];
-let soil=0,previousTip=null,previousK=null,previousA=null,lastSoilInfo='',dumping=false,lastFillTime=-1,lastFill=-1,spillDelay=0;
+let pendingCut=0;let soil=0,previousTip=null,previousK=null,previousA=null,lastSoilInfo='',dumping=false,lastFillTime=-1,lastFill=-1,spillDelay=0;
 const cavity=[[-.045,.045],[.035,.19],[.17,.315],[.32,.365],[.49,.355],[.62,.29],[.74,.21],[.765,.17],[.12,-.075]];
 function area(poly){let sum=0;for(let i=0;i<poly.length;i++){let a=poly[i],b=poly[(i+1)%poly.length];sum+=a[0]*b[1]-a[1]*b[0]}return Math.abs(sum)*.5}
 function clipFill(poly,ny,nz,level){let out=[];for(let i=0;i<poly.length;i++){const a=poly[i],b=poly[(i+1)%poly.length],da=a[1]*ny+a[0]*nz-level,db=b[1]*ny+b[0]*nz-level;if(da<=0)out.push(a);if((da<=0)!==(db<=0)){let t=da/(da-db);out.push([a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t])}}return out}
@@ -125,7 +125,7 @@ function deposit(xx,zz,amount,radius){let cells=[],total=0;brush(xx,zz,radius,(i
 function launchDrops(amount,bw,s,cap){if(amount<=0||drops.length>=96)return 0;let n=Math.min(96-drops.length,Math.max(1,Math.min(5,Math.ceil(amount/(cap*.018)))));for(let i=0;i<n;i++){let start=tool.localToWorld(v((rnd()-.5)*bw*.76,.10,.74+rnd()*.10));let end=tool.localToWorld(v(0,-.32,.95)),origin=tool.localToWorld(v(0,0,0));let vel=end.sub(origin).normalize().multiplyScalar(.18+rnd()*.45);vel.y-=.15;drops.push({p:start,vel,amount:amount/n,r:Math.max(.025,Math.cbrt(amount/n)*.42),life:0,spread:Math.max(.28,bw*s.scale*.62)})}return amount}
 function animateSoil(dt){let transit=0;for(let i=incoming.length-1;i>=0;i--){let p=incoming[i];p.t+=dt;if(p.t>=p.life)incoming.splice(i,1);else transit+=p.amount*(1-p.t/p.life)}intake.count=incoming.length;incoming.forEach((p,i)=>{let t=p.t/p.life,sm=t*t*(3-2*t);clodDummy.position.copy(p.start).lerp(p.end,sm);clodDummy.position.y-=Math.sin(t*Math.PI)*.13;clodDummy.scale.set(p.size,p.size*.8,p.size*.9);clodDummy.rotation.set(t*3,i,t*5);clodDummy.updateMatrix();intake.setMatrixAt(i,clodDummy.matrix)});intake.instanceMatrix.needsUpdate=true;
 for(let i=drops.length-1;i>=0;i--){let p=drops[i];p.life+=dt;p.vel.y-=9.81*dt;p.p.addScaledVector(p.vel,dt);if(p.p.y<=heightAt(p.p.x,p.p.z)+p.r*.4||p.life>4){if(!deposit(p.p.x,p.p.z,p.amount,p.spread))deposit(Math.max(-half+.5,Math.min(half-.5,p.p.x)),Math.max(-half+.5,Math.min(half-.5,p.p.z)),p.amount,p.spread);drops.splice(i,1)}}falling.count=drops.length;drops.forEach((p,i)=>{clodDummy.position.copy(p.p);clodDummy.scale.set(p.r,p.r*.85,p.r*.9);clodDummy.rotation.set(p.life*5,i,p.life*3);clodDummy.updateMatrix();falling.setMatrixAt(i,clodDummy.matrix)});falling.instanceMatrix.needsUpdate=true;return transit}
-function resetTerrain(){heights.set(initial);for(let i=0;i<pos.count;i++){pos.setY(i,heights[i]);paintVertex(i)}pos.needsUpdate=true;geo.attributes.color.needsUpdate=true;geo.computeVertexNormals();soil=0;previousTip=null;previousK=null;previousA=null;dumping=false;spillDelay=0;carried.visible=false;incoming.length=drops.length=0;intake.count=falling.count=0;dirty=false;unstable.clear();lastSoilInfo='';lastFill=-1;lastFillTime=-1}
+function resetTerrain(){heights.set(initial);for(let i=0;i<pos.count;i++){pos.setY(i,heights[i]);paintVertex(i)}pos.needsUpdate=true;geo.attributes.color.needsUpdate=true;geo.computeVertexNormals();soil=0;pendingCut=0;previousTip=null;previousK=null;previousA=null;dumping=false;spillDelay=0;carried.visible=false;incoming.length=drops.length=0;intake.count=falling.count=0;dirty=false;unstable.clear();lastSoilInfo='';lastFill=-1;lastFillTime=-1}
 // Isolate arm/bucket cutting travel from boom, swing and track motion.
 function scoopTravel(b,a,k,oldA,oldK,tipY,tipZ){
  if(oldA===null||oldK===null||!(a<oldA-1e-8||k<oldK-1e-8))return 0;
@@ -158,9 +158,59 @@ function collisionDepth(s,cutting){
  for(const d of [.3,.7,1.15,1.58]){sample(0,1.45+2.25*Math.sin(s.b)+d*Math.sin(armAngle)-.12,.55+2.25*Math.cos(s.b)+d*Math.cos(armAngle),.015)}
  return worst;
 }
+
+function toolPoint(s,xx,yy,zz){
+ const angle=s.b+s.a+s.k,armAngle=s.b+s.a,t=s.yaw+s.swing,cs=Math.cos(t),sn=Math.sin(t),sc=s.scale;
+ const lx=.38+xx,ly=1.45+2.25*Math.sin(s.b)+1.65*Math.sin(armAngle)+yy*Math.cos(angle)+zz*Math.sin(angle),lz=.55+2.25*Math.cos(s.b)+1.65*Math.cos(armAngle)-yy*Math.sin(angle)+zz*Math.cos(angle);
+ return {x:-s.x-sc*(lx*cs+lz*sn),y:heightAt(-s.x,s.z)+sc*ly,z:s.z+sc*(-lx*sn+lz*cs)};
+}
+// Excavate the swept solid envelope BEFORE collision is evaluated. A vertical touch alone never loads soil.
+function preCut(prev,next){
+ const bw=bucketWidths[next.att];if(!bw)return 0;
+ const ty=next.att===1?.18:.26,tz=next.att===1?.79:.97;
+ const a=toolPoint(prev,0,ty,tz),b=toolPoint(next,0,ty,tz);
+ const travel=Math.hypot(a.x-b.x,a.y-b.y,a.z-b.z);
+ if(travel<1e-7)return 0;
+ // Closing the bucket or pulling the arm is an active cut; never infer a cut from contact alone.
+ if(!(next.a<prev.a-1e-8||next.k<prev.k-1e-8)||next.k>prev.k+1e-7)return 0;
+ const targets=new Map(),radius=step*.92;
+ const count=Math.min(6,Math.max(1,Math.ceil(travel/(step*.4))));
+ for(let j=1;j<=count;j++){
+  const q={...next};for(const key of ['x','z','yaw','swing','b','a','k'])q[key]=prev[key]+(next[key]-prev[key])*j/count;
+  for(const [xx,yy,zz,lip] of toolSamples[q.att]){
+   const p=toolPoint(q,xx,yy,zz);
+   const depth=heightAt(p.x,p.z)-p.y;
+   if(depth<.009*q.scale||p.y<heightAt(-q.x,q.z)-2.8*q.scale)continue;
+   // The soil immediately surrounding the contact must yield for the shell to advance.
+   brush(p.x,p.z,radius,(i,w)=>{
+    if(w<=0)return;
+    const target=Math.max(-2.8,p.y-.012*q.scale);
+    if(heights[i]>target)targets.set(i,Math.min(target,targets.get(i)??Infinity));
+   });
+  }
+ }
+ let removed=0;
+ for(const [i,target] of targets){
+  const old=heights[i],dep=Math.min(old-target,Math.max(.007*next.scale,travel*.9));
+  if(dep>0){change(i,old-dep);removed+=dep*step*step}
+ }
+ if(removed>0){
+  const cap=Math.max(.01,(next.capacity||.25)*([1,1.15,.55,0,0,.8,0,0][next.att]||1));
+  const collected=Math.min(Math.max(0,cap-soil),removed*.88);
+  soil+=collected;pendingCut+=collected;
+  const excess=removed-collected,t=next.yaw+next.swing,offset=bw*next.scale*.75+step;
+  for(const sign of [-1,1]){
+   const x=b.x+Math.cos(t)*offset*sign,z=b.z+Math.sin(t)*offset*sign;
+   if(!deposit(x,z,excess*.5,Math.max(step*1.5,bw*next.scale*.4)))deposit(b.x,b.z,excess*.5,step*2);
+  }
+ }
+ return removed;
+}
+
 function resolveMotion(prev,next){
  if(!next.active||!next.engine||!next.unlocked)return next;
- const bw=bucketWidths[next.att],cutting=!!bw&&scoopTravel(next.b,next.a,next.k,prev.a,prev.k,next.att===1?.18:.26,next.att===1?.79:.97)>1e-8;
+ const bw=bucketWidths[next.att],cutting=!!bw&&(next.a<prev.a-1e-8||next.k<prev.k-1e-8)&&next.k<=prev.k+1e-7;
+ if(cutting)preCut(prev,next);
  const baseline=collisionDepth(prev,cutting),limit=baseline+.00002;
  if(collisionDepth(next,cutting)<=limit)return next;
  const keys=['x','z','yaw','swing','b','a','k'];let lo=0,hi=1;
@@ -216,30 +266,13 @@ if(s.active&&s.engine&&s.unlocked&&bucket&&dt>0){
 const bw=bucketWidths[s.att],width=bw*s.scale,radius=Math.max(step*1.2,width*.55);
 const surface=heightAt(tooth.x,tooth.z),angle=s.b+s.a+s.k;
 const axis=tool.localToWorld(v(1,0,0)).sub(tool.localToWorld(v(0,0,0)));axis.y=0;axis.normalize();
-const isCutting=previousTip&&cutTravel>1e-7&&dk<=.00005&&tooth.y<surface+.025*s.scale;
+const isCutting=pendingCut>0||(previousTip&&cutTravel>1e-7&&dk<=.00005&&tooth.y<surface+.025*s.scale);
 const stableVolume=capacity*retainedFraction(Math.cos(angle),Math.sin(angle));
 const canSpill=mouth.y<-.10&&tooth.y>surface+.08;
 spillDelay=canSpill&&!isCutting?spillDelay+dt:0;
 dumping=soil>stableVolume+.00001&&canSpill&&!isCutting&&(dk>0.00005||spillDelay>.18);
 if(dumping){const amount=Math.min(soil-stableVolume,capacity*dt*(.3+Math.max(0,-mouth.y)*1.6));soil-=launchDrops(amount,bw,s,capacity)}
-if(isCutting){
- const before=soil,bite=.012*s.scale;let displaced=0;
- const samples=Math.min(12,Math.max(1,Math.ceil(movement/(step*.35))));
- for(let j=1;j<=samples;j++){
-  const p=previousTip.clone().lerp(tooth,j/samples);
-  const volume=cutEdge(p,axis,width,cutTravel/samples,s.scale,bite);
-  const collected=Math.min(Math.max(0,capacity-soil),volume*.88);
-  soil+=collected;displaced+=volume-collected;
- }
- if(displaced>0){
-  const side=axis.clone().multiplyScalar(width*.62);
-  for(const sign of [-1,1]){
-   const p=tooth.clone().addScaledVector(side,sign);
-   if(!deposit(p.x,p.z,displaced*.5,Math.max(step*1.4,width*.37)))deposit(tooth.x,tooth.z,displaced*.5,radius);
-  }
- }
- spawnIntake(soil-before,bw,s.scale,capacity,tipY,tipZ);
-}
+if(pendingCut>0){spawnIntake(pendingCut,bw,s.scale,capacity,tipY,tipZ);pendingCut=0}
 }
 previousTip=tooth.clone();
 const transit=animateSoil(dt),bw=([.77,1.30,.38,0,0,.82][s.att]||.77),angle=s.b+s.a+s.k;

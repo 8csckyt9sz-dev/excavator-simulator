@@ -31,6 +31,7 @@ const FORMS={
  2:{shell:[[.12,-.15],[.045,.05],[.07,.27],[.21,.50],[.39,.60],[.57,.59],[.73,.47],[.86,.32],[.93,.24]],rim:[[.12,-.15],[.38,-.10],[.68,.055],[.93,.24]],tip:[.24,1.08]},
  5:{shell:[[.12,-.15],[.065,.04],[.08,.23],[.22,.44],[.39,.53],[.56,.53],[.72,.44],[.86,.30],[.91,.24]],rim:[[.12,-.15],[.40,-.10],[.68,.06],[.91,.24]],tip:[.24,1.055]}
 };
+const CAD_BUCKET_SHELL=[[.10,.058],[-.06,.181],[-.109,.268],[-.087,.356],[.002,.489],[.057,.678],[.185,.824],[.308,.919],[.443,.953],[.581,.936],[.704,.871],[1.032,.611],[1.2268,.45666]];
 const BUCKET_CACHE=new Map();
 function bucketSpec(s,att=s.att){
  const form=FORMS[att];if(!form)return null;
@@ -44,17 +45,25 @@ function bucketSpec(s,att=s.att){
  const gap=f[3]/sc,pin=f[4]/sc,thick=Math.max(.010,.012/sc*Math.sqrt(f[0]/.75));
  // Direction from the shell toward the open mouth, derived from the rim endpoints.
  const dy=lip[1]-rim[0][1],dz=lip[0]-rim[0][0],len=Math.hypot(dy,dz);
- const spec={att,W,D,H,shell,rim,lip,tip,gap,pin,thick,teeth:att===1?0:att===2?f[11]:att===5?f[12]:f[10],normalY:-dz/len,normalZ:dy/len};BUCKET_CACHE.set(key,spec);return spec;
+ const spec={att,W,D,H,shell,rim,lip,tip,gap,pin,thick,teeth:att===1?0:att===2?f[11]:att===5?f[12]:f[10],normalY:-dz/len,normalZ:dy/len};
+ if(att===0||att===2){
+  const zScale=D/1.39253,yScale=H/1.15;
+  spec.cad=true;spec.cadZ=zScale;spec.cadY=yScale;spec.cadX=W/1.13;
+  spec.shell=CAD_BUCKET_SHELL.map(([z,y])=>[z*zScale,y*yScale]);spec.lip=spec.shell[spec.shell.length-1];
+  spec.rim=[spec.shell[0],spec.lip];spec.tip=[.32515*yScale,1.39253*zScale];spec.pin2Y=.40597*yScale;spec.pin2Z=-.18838*zScale;
+  const dy=spec.lip[1]-spec.rim[0][1],dz=spec.lip[0]-spec.rim[0][0],len=Math.hypot(dy,dz);spec.normalY=-dz/len;spec.normalZ=dy/len;
+ }
+ BUCKET_CACHE.set(key,spec);return spec;
 }
 
 
 // Closed four-bar linkage: bucket pin, rocker pivot, dogbone and rocker.
 // The two links retain fixed lengths for all bucket angles.
 function linkGeometry(s,k=s.k){
- const q=bucketSpec(s),{A}=rig(s),r=q?Math.hypot(q.D*.23,q.H*.085):.187;
- const pinY=q?-q.H*.085:-.05,pinZ=q?q.D*.23:.18;
- const P={y:r*.60,z:A-r*1.10},Q={y:pinY*Math.cos(k)+pinZ*Math.sin(k),z:A-pinY*Math.sin(k)+pinZ*Math.cos(k)};
- const d=Math.hypot(Q.y-P.y,Q.z-P.z),L1=r*1.10,L2=r*1.30;
+ const q=bucketSpec(s),{A}=rig(s);
+ const pinY=q?(q.pin2Y??-q.H*.085):-.05,pinZ=q?(q.pin2Z??q.D*.23):.18,r=Math.hypot(pinY,pinZ);
+ const P={y:r*.45,z:A-r*1.0},Q={y:pinY*Math.cos(k)+pinZ*Math.sin(k),z:A-pinY*Math.sin(k)+pinZ*Math.cos(k)};
+ const d=Math.hypot(Q.y-P.y,Q.z-P.z),L1=r*1.25,L2=r*1.22;
  const along=(L1*L1-L2*L2+d*d)/(2*d),perp=Math.sqrt(Math.max(0,L1*L1-along*along));
  const uy=(Q.y-P.y)/d,uz=(Q.z-P.z)/d;
  const C={y:P.y+uy*along-uz*perp,z:P.z+uz*along+uy*perp};
@@ -70,6 +79,32 @@ const mat=(color,roughness=.7,metalness=0)=>new T.MeshStandardMaterial({color,ro
 const paint=mat(0x159d9b,.43,.23),edge=mat(0x117b79,.55,.35),steel=mat(0x343b3e,.63,.55),track=mat(0x302e29,.9,.35),shoe=mat(0x55534a,.85,.4),rubber=mat(0x15191a,.95),chrome=mat(0xcdd7dd,.20,.82),inner=mat(0x454a46,.9),seatMat=mat(0x272d30,.92),glass=new T.MeshStandardMaterial({color:0x9ab9c8,transparent:true,opacity:.14,roughness:.18,metalness:.1,depthWrite:false,side:T.DoubleSide}),screen=mat(0x193129,.5);
 const v=(x,y,z)=>new T.Vector3(x,y,z);function group(parent,x=0,y=0,z=0){const g=new T.Group();g.position.set(x,y,z);parent.add(g);return g}function mesh(parent,geo,m,x=0,y=0,z=0,shadow=true){const o=new T.Mesh(geo,m);o.position.set(x,y,z);o.castShadow=shadow;o.receiveShadow=true;parent.add(o);return o}function box(p,m,x,y,z,w,h,d){return mesh(p,new T.BoxGeometry(w,h,d),m,x,y,z)}function cyl(p,m,x,y,z,r,h,axis='y',r2=r){const o=mesh(p,new T.CylinderGeometry(r,r2,h,16),m,x,y,z);if(axis==='x')o.rotation.z=Math.PI/2;if(axis==='z')o.rotation.x=Math.PI/2;return o}function segment(p,m,r){return mesh(p,new T.CylinderGeometry(r,r,1,12),m)}function place(o,a,b){o.position.copy(a).add(b).multiplyScalar(.5);const d=b.clone().sub(a);o.scale.y=Math.max(.001,d.length());o.quaternion.setFromUnitVectors(v(0,1,0),d.normalize())}
 function extrude(p,m,points,width,x=0,y=0,z=0,bevel=.035){const sh=new T.Shape();points.forEach(([zz,yy],i)=>i?sh.lineTo(zz,yy):sh.moveTo(zz,yy));sh.closePath();const g=new T.ExtrudeGeometry(sh,{depth:width,bevelEnabled:bevel>0,bevelSize:bevel,bevelThickness:bevel,bevelSegments:2,steps:1});g.translate(0,0,-width/2);g.rotateY(-Math.PI/2);return mesh(p,g,m,x,y,z)}
+
+// VMC Motion Technologies CET200 (Apache-2.0). Meshes are modified in coordinate,
+// scale, color and attachment layout. See models/NOTICE and models/LICENSE.
+const cadCache=new Map();
+function cadFile(name){
+ if(cadCache.has(name))return cadCache.get(name);
+ const raw=atob(EARTH_CAD[name]),bytes=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);
+ const view=new DataView(bytes.buffer),len=view.getUint32(12,true),json=JSON.parse(new TextDecoder().decode(bytes.subarray(20,20+len))),binary=28+len;
+ if(view.getUint32(0,true)!==0x46546c67||view.getUint32(24+len,true)!==0x004e4942)throw Error('Invalid CAD GLB '+name);
+ function access(i){const a=json.accessors[i],b=json.bufferViews[a.bufferView],n={SCALAR:1,VEC2:2,VEC3:3,VEC4:4}[a.type],size={5121:1,5123:2,5125:4,5126:4}[a.componentType],offset=binary+(b.byteOffset||0)+(a.byteOffset||0),stride=b.byteStride||n*size,arr=a.componentType===5126?new Float32Array(a.count*n):new Uint32Array(a.count*n);
+  for(let j=0;j<a.count;j++)for(let k=0;k<n;k++){let p=offset+j*stride+k*size;arr[j*n+k]=a.componentType===5126?view.getFloat32(p,true):a.componentType===5123?view.getUint16(p,true):a.componentType===5125?view.getUint32(p,true):view.getUint8(p)}return arr}
+ const result={json,access};cadCache.set(name,result);return result;
+}
+function cadMesh(parent,name,index,transform,m,flip=false){
+ const {json,access}=cadFile(name);for(const primitive of json.meshes[index].primitives){if(primitive.mode!==undefined&&primitive.mode!==4)continue;const data=access(primitive.attributes.POSITION),verts=new Float32Array(data.length);
+ for(let i=0;i<data.length;i+=3){let p=transform(data[i],data[i+1],data[i+2]);verts.set(p,i)}
+ const g=new T.BufferGeometry();g.setAttribute('position',new T.BufferAttribute(verts,3));if(primitive.indices!==undefined){let indices=access(primitive.indices);if(flip)for(let i=0;i<indices.length;i+=3){let a=indices[i];indices[i]=indices[i+1];indices[i+1]=a}g.setIndex(new T.BufferAttribute(indices,1))}
+ // Transform source normals by the inverse transpose of the linear transform.
+ if(primitive.attributes.NORMAL!==undefined){const origin=v(...transform(0,0,0)),x=v(...transform(1,0,0)).sub(origin),y=v(...transform(0,1,0)).sub(origin),z=v(...transform(0,0,1)).sub(origin),nm=new T.Matrix3().getNormalMatrix(new T.Matrix4().makeBasis(x,y,z)),ns=access(primitive.attributes.NORMAL);for(let i=0;i<ns.length;i+=3){let q=v(ns[i],ns[i+1],ns[i+2]).applyMatrix3(nm).normalize();ns.set([q.x,q.y,q.z],i)}g.setAttribute('normal',new T.BufferAttribute(ns,3))}else g.computeVertexNormals();g.computeBoundingSphere();mesh(parent,g,m);
+ }}
+function cadHierarchy(parent,name,nodeIndex,convert,material,flip=false,matrix=new T.Matrix4()){
+ const {json}=cadFile(name),n=json.nodes[nodeIndex];if(/VMCLogo/.test(n.name||''))return;
+ const t=n.translation||[0,0,0],r=n.rotation||[0,0,0,1],sc=n.scale||[1,1,1],local=new T.Matrix4().compose(v(...t),new T.Quaternion(...r),v(...sc)),combined=matrix.clone().multiply(local);
+ if(n.mesh!==undefined)cadMesh(parent,name,n.mesh,(x,y,z)=>{const p=v(x,y,z).applyMatrix4(combined);return convert(p.x,p.y,p.z)},material(n,json.meshes[n.mesh]),flip);
+ for(const i of n.children||[])cadHierarchy(parent,name,i,convert,material,flip,combined);
+}
 let seed=9127;function rnd(){seed=(seed*1664525+1013904223)>>>0;return seed/4294967296}
 
 // A generated outdoor environment gives metal and glazing a sky/ground reflection.
@@ -135,7 +170,16 @@ const mirrorArm=segment(cab,steel,.018);place(mirrorArm,v(.43,.92,.52),v(.65,.96
 const boom=group(upper,.38,1.45,.55),arm=group(boom,0,0,2.25),tool=group(arm,0,0,1.65),boomVisual=group(boom),armVisual=group(arm);
 extrude(boomVisual,paint,[[0,-.16],[.22,-.20],[.48,-.18],[.79,-.06],[1.13,.075],[1.38,.09],[1.78,-.035],[2.12,-.115],[2.25,-.10],[2.25,.13],[2.09,.20],[1.77,.31],[1.43,.46],[1.19,.45],[.92,.36],[.53,.24],[.20,.18],[0,.17]],.30,0,0,0,.035);
 extrude(armVisual,paint,[[-.19,.07],[-.10,-.13],[.10,-.19],[.49,-.155],[1.17,-.105],[1.50,-.10],[1.65,-.075],[1.68,.055],[1.52,.105],[.85,.14],[.33,.24],[.05,.26],[-.14,.21]],.23,0,0,0,.023);
-for(const g of [boom,arm,tool]){cyl(g,steel,0,0,0,.14,.40,'x');for(const side of [-1,1])cyl(g,chrome,side*.215,0,0,.075,.025,'x')}
+for(const g of [boom,arm,tool]){const piv=group(g);cyl(piv,steel,0,0,0,.075,.30,'x');for(const side of [-1,1])cyl(piv,chrome,side*.155,0,0,.047,.018,'x')}
+// Replace the simplified boom/arm steelwork with actual CAD solids.
+const cadBoom=group(boom),cadArm=group(arm);
+const cadAngle=Math.atan2(3.19445,4.71397),cadCos=Math.cos(cadAngle),cadSin=Math.sin(cadAngle),cadBoomLen=Math.hypot(4.71397,3.19445);
+const mapBoom=(x,y,z)=>[-y,(z*cadCos-x*cadSin),(x*cadCos+z*cadSin)];
+const mapArm=(x,y,z)=>[-y,x,-z];
+for(let i=0;i<=8;i++)cadMesh(cadBoom,'boom',i,mapBoom,i<2?steel:i===2?paint:steel,true);
+for(let i=0;i<3;i++)cadMesh(cadArm,'arm',i,mapArm,i<2?steel:paint,true);
+boomVisual.children[0].visible=false;armVisual.children[0].visible=false;
+const cadUnder=group(base);for(let i=0;i<2;i++)cadMesh(cadUnder,'track_frame',i,(x,y,z)=>[-y,z,x],steel,true);
 function cylinder(parent,r){return [segment(parent,steel,r),segment(parent,chrome,r*.52)]}
 
 // Hydraulic ram model: fixed barrel, independent piston rod, end-eye and gland.
@@ -159,8 +203,10 @@ for(let i=0;i<3;i++){const p=group(arm);cyl(p,steel,0,0,0,.059,.36,'x');for(cons
 function rotateYZ(y,z,angle){return [y*Math.cos(angle)+z*Math.sin(angle),-y*Math.sin(angle)+z*Math.cos(angle)]}
 function ramEnds(s,b=s.b,a=s.a,k=s.k){
  const {B,A,X,Y,Z}=rig(s);
- const [by,bz]=rotateYZ(-.15,B*.49,b),[ay,az]=rotateYZ(.21,-A*.13,a),link=linkGeometry(s,k);
- return {liftA:[X,Y-.47,Z+.13],liftB:[X,Y+by,Z+bz],stickA:[0,.33,B*.26],stickB:[0,ay,B+az],bucketA:[0,.205,A*.12],bucketB:[0,link.C.y,link.C.z],link};
+ const [by,bz]=rotateYZ(-.15,B*.49,b),link=linkGeometry(s,k);
+ const [ay,az]=rotateYZ(.06458*A/2.9,-.70467*A/2.9,a);
+ const stickAnchor=mapBoom(1.59038,0,2.91902),bScale=B/cadBoomLen;
+ return {liftA:[X,Y-.47,Z+.13],liftB:[X,Y+by,Z+bz],stickA:[0,stickAnchor[1]*bScale,stickAnchor[2]*bScale],stickB:[0,ay,B+az],bucketA:[0,.55771*A/2.9,.26341*A/2.9],bucketB:[0,link.C.y,link.C.z],link};
 }
 const ramLengths=new Map();
 function minRamLengths(s){
@@ -175,7 +221,7 @@ function updateRams(s){
  const twin=p.nominal>=.45,spacing=.13;liftTwin.body.parent.visible=twin;
  const la=v(...e.liftA),lb=v(...e.liftB);if(twin){la.x=X-spacing;lb.x=X-spacing;placeRam(liftTwin,v(X+spacing,la.y,la.z),v(X+spacing,lb.y,lb.z),lengths[0])}
  placeRam(lift,la,lb,lengths[0]);placeRam(stickCylinder,v(...e.stickA),v(...e.stickB),lengths[1]);placeRam(bucketCylinder,v(...e.bucketA),v(...e.bucketB),lengths[2]);
- const q=bucketSpec(s),offset=q?Math.max(.065,q.gap*.5+q.thick*1.3):.15;
+ const q=bucketSpec(s),offset=q?Math.max(.065,q.cad?.215*q.cadX:q.gap*.5+q.thick*1.3):.15;
  for(let i=0;i<2;i++){const x=(i?1:-1)*offset;place(rockerBars[i],v(x,P.y,P.z),v(x,C.y,C.z));place(dogBars[i],v(x,C.y,C.z),v(x,Q.y,Q.z))}
  [P,C,Q].forEach((p,i)=>linkPins[i].position.set(0,p.y,p.z));
 }
@@ -184,10 +230,20 @@ function adjust(pair,a,b,f=.58){const mid=a.clone().lerp(b,f);place(pair[0],a,mi
 const hoses=[];for(let i=0;i<4;i++){const x=-.125+i*.080,pts=[v(x,.20,.08),v(x,.32,.45),v(x,.49,1.10),v(x,.51,1.38),v(x,.30,1.86),v(x,.20,2.20)];const curve=new T.CatmullRomCurve3(pts);hoses.push(mesh(boomVisual,new T.TubeGeometry(curve,32,.014,8,false),steel));for(const t of [.18,.42,.76]){let p=curve.getPoint(t);box(boomVisual,steel,p.x,p.y,p.z,.05,.032,.055)}}
 const flexHoses=[];for(let i=0;i<3;i++){const o=mesh(boom,new T.BufferGeometry(),rubber);flexHoses.push(o)}let lastHosePose='';
 function flexLines(s,B,A){const key=Math.round(s.a*80)+':'+Math.round(B*100);if(key===lastHosePose)return;lastHosePose=key;for(let i=0;i<flexHoses.length;i++){const x=-.085+i*.08;const [ey,ez]=rotateYZ(.23,A*.20,s.a);const curve=new T.CatmullRomCurve3([v(x,.20,B*.90),v(x,.30,B*.99),v(x,.31,B+.10),v(x,ey,B+ez)]);const o=flexHoses[i];o.geometry.dispose();o.geometry=new T.TubeGeometry(curve,14,.016,6,false)}}
-const tools=[];const worn=mat(0x777774,.54,.69),bucketSteel=mat(0x555653,.74,.56);
+const tools=[];const worn=mat(0x777774,.46,.73),bucketSteel=mat(0x555653,.67,.64);
 function curvedPlate(p,points,w,m){const curve=new T.CatmullRomCurve3(points.map(([z,y])=>v(0,y,z)),false,'centripetal');let verts=[],ix=[],normals;const count=22;for(let j=0;j<=count;j++){let q=curve.getPoint(j/count);verts.push(-w/2,q.y,q.z,w/2,q.y,q.z)}for(let j=0;j<count;j++){let i=j*2;ix.push(i,i+1,i+2,i+1,i+3,i+2)}const geom=new T.BufferGeometry();geom.setAttribute('position',new T.Float32BufferAttribute(verts,3));geom.setIndex(ix);geom.computeVertexNormals();let mm=m.clone();mm.side=T.DoubleSide;return mesh(p,geom,mm)}
 // Build continuous thickness steel shell, not a solid block. All parts use the same physical profile.
+function cadBucket(spec){
+ const g=group(tool),C=Math.cos(.9),S=Math.sin(.9),tf=(x,y,z)=>{let yy=z+.41007984,zz=1.12030852-y;return [x*spec.cadX,(yy*C+zz*S)*spec.cadY,(zz*C-yy*S)*spec.cadZ]};
+ for(const i of [0,1,2])cadMesh(g,'bucket',i,tf,i===0?bucketSteel:worn);
+ // Side cutters in their original assembled CAD coordinate system.
+ for(const [idx,tx,ty,tz] of [[3,-.39529881,.545,-1.06852674],[4,-.39529881,-.545,-1.06852674]])cadMesh(g,'bucket',idx,(x,y,z)=>tf(x+ty,y+tz+1.12030852,z+tx-.41007984),worn);
+ // Original tooth / adapter solid translated across the width to match each machine class.
+ const source=(.445),teeth=spec.teeth;for(let i=0;i<teeth;i++){const off=(i-(teeth-1)/2)*.89/Math.max(1,teeth-1);for(const idx of [7,12])cadMesh(g,'bucket',idx,(x,y,z)=>tf(x+off,y,z),idx===7?worn:bucketSteel)}
+ return g;
+}
 function bucket(spec){
+ if(spec.cad)return cadBucket(spec);
  const {W:w,shell,rim,lip,tip,gap,pin,thick,teeth,att}=spec,skeleton=att===5,g=group(tool);
  const shape=[...shell,...rim.slice(1,-1).reverse()];
  const surfaceCurve=new T.CatmullRomCurve3(shell.map(([z,y])=>v(0,y,z)),false,'centripetal');
@@ -496,6 +552,8 @@ if(profileKey!==p.id){profileKey=p.id;rebuildBuckets(s);lastFill=-1;lastFillTime
  cab.scale.set(p.cabW/sc/.91,(p.height-cabFloor)/sc/1.22,p.cabD/sc/1.36);
  cabShell.visible=!p.open;canopy.visible=p.open;
  boom.position.set(X,Y,Z);arm.position.z=B;tool.position.z=A;boomVisual.scale.z=B/2.25;armVisual.scale.z=A/1.65;
+ const bScale=B/cadBoomLen,aScale=A/2.9;cadBoom.scale.set(p.width/sc/2.8,bScale,bScale);cadArm.scale.set(p.width/sc/2.8,aScale,aScale);
+ undercarriage.visible=false;cadUnder.scale.set(p.width/sc/2.8,deck, p.track/sc/3.8244);
 }
 base.position.set(-s.x,heightAt(-s.x,s.z),s.z);base.rotation.y=-s.yaw;base.scale.set(-s.scale,s.scale,s.scale);upper.rotation.y=s.swing;boom.rotation.x=-s.b;arm.rotation.x=-s.a;tool.rotation.x=-s.k;tools.forEach((o,i)=>o.visible=i===s.att);applyHydraulic(s);chisel.position.z=.96;updateRams(s);flexLines(s,B,A);const inside=s.cab&&s.active;
 base.updateMatrixWorld(true);soilStep(s);const local=(p,g=upper)=>g.localToWorld(p);if(inside){camera.position.copy(local(v(-.04,.79,.04),cab));camera.lookAt(camera.position.clone().add(local(v(0,-.10,1),upper).sub(local(v(0,0,0),upper)).multiplyScalar(7)))}else{const distance=Math.max(6.8,p.boom+p.arm+1.5)/sc;camera.position.copy(local(v(-distance*.85,distance*.58,distance*.94),base));camera.lookAt(local(v(s.active?0:2.1/sc,p.height*.48/sc,p.boom*.35/sc),base))}camera.updateMatrixWorld();sun.position.set(-s.x-18,28,s.z+12);sun.target.position.set(-s.x,0,s.z);

@@ -787,7 +787,7 @@ previousTip=tooth.clone();
 animateSoil(dt);const bw=spec?.W??.77,angle=s.b+s.a+s.k;
 updateFill(bucket?Math.min(1,Math.max(0,soil)/capacity):0,bw,Math.cos(angle),Math.sin(angle),performance.now());
 relaxSoil(dt);refreshTerrain();
-let info=bucket?'土量 '+Math.round(soil*1000)/1000+' / '+Math.round(capacity*1000)/1000+' m³':'掘削用バケットに交換';if(workMode)info+=' / '+workMode;if(excavationLoad>.35)info+=' / 負荷 '+Math.min(100,Math.round(excavationLoad*100))+'%';if(s.contact)info+=' / 接地';if(info!==lastSoilInfo){lastSoilInfo=info;document.getElementById('soilInfo').textContent=info}
+let info=bucket?'土量 '+Math.round(soil*1000)/1000+' / '+Math.round(capacity*1000)/1000+' m³':'掘削用バケットに交換';if(workMode)info+=' / '+workMode;if(excavationLoad>.35)info+=' / 負荷 '+Math.min(100,Math.round(excavationLoad*100))+'%';if(s.contact)info+=' / 接地';const localized=typeof tr==='function'?tr(info):info;if(localized!==lastSoilInfo){lastSoilInfo=localized;document.getElementById('soilInfo').textContent=localized}
 }
 let width=0,height=0,profileKey='';
 

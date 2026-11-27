@@ -154,8 +154,8 @@ if(typeof EARTH_PHOTOS!=='undefined'){
  const loader=new T.TextureLoader();
  const load=(src)=>new Promise((resolve,reject)=>loader.load(src,resolve,undefined,reject));
  photoAssetsReady=Promise.all([load(EARTH_PHOTOS.ground),load(EARTH_PHOTOS.sky)]).then(([g,sky])=>{
-  g.colorSpace=T.SRGBColorSpace;g.wrapS=g.wrapT=T.RepeatWrapping;g.repeat.set(terrainSize/1.7,terrainSize/1.7);g.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());
-  const bump=g.clone();bump.colorSpace=T.NoColorSpace;bump.needsUpdate=true;groundMaterial.map=g;groundMaterial.bumpMap=bump;groundMaterial.bumpScale=.019;groundMaterial.needsUpdate=true;
+  g.colorSpace=T.SRGBColorSpace;g.wrapS=g.wrapT=T.RepeatWrapping;g.repeat.set(terrainSize/3.8,terrainSize/3.8);g.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());
+  const bump=g.clone();bump.colorSpace=T.NoColorSpace;bump.needsUpdate=true;groundMaterial.map=g;groundMaterial.bumpMap=bump;groundMaterial.bumpScale=.012;groundMaterial.needsUpdate=true;
   sky.colorSpace=T.SRGBColorSpace;sky.mapping=T.EquirectangularReflectionMapping;const gen=new T.PMREMGenerator(renderer);const target=gen.fromEquirectangular(sky);scene.environment=target.texture;scene.background=sky;gen.dispose();return true;
  }).catch(()=>false);
 }
@@ -163,12 +163,12 @@ const outerMat=new T.MeshStandardMaterial({map:dirt,roughness:1,color:0xb5a18a})
 for(const [xx,zz,ww,dd] of [[0,-101,202,158],[0,101,202,158],[-101,0,158,44],[101,0,158,44]]){const outer=mesh(scene,new T.PlaneGeometry(ww,dd),outerMat,xx,-.015,zz,false);outer.rotation.x=-Math.PI/2}
 let dirty=false,lastNormals=0;const unstable=new Set();
 function heightAt(xx,zz){let u=(xx+half)/step,w=(zz+half)/step;if(u<0||w<0||u>=subdivisions||w>=subdivisions)return 0;let ix=Math.floor(u),iz=Math.floor(w),dx=u-ix,dz=w-iz,i=iz*stride+ix;return (heights[i]*(1-dx)+heights[i+1]*dx)*(1-dz)+(heights[i+stride]*(1-dx)+heights[i+stride+1]*dx)*dz}
-function change(i,y){if(Math.abs(heights[i]-y)<1e-7)return;heights[i]=y;pos.setY(i,y);paintVertex(i);dirty=true;unstable.add(i)}
+let terrainTransaction=null;function change(i,y){if(Math.abs(heights[i]-y)<1e-7)return;if(terrainTransaction&&!terrainTransaction.has(i))terrainTransaction.set(i,heights[i]);heights[i]=y;pos.setY(i,y);paintVertex(i);dirty=true;unstable.add(i)}
 function brush(xx,zz,r,fn){let ix=Math.round((xx+half)/step),iz=Math.round((zz+half)/step),n=Math.ceil(r/step);for(let j=Math.max(1,iz-n);j<=Math.min(subdivisions-1,iz+n);j++)for(let k=Math.max(1,ix-n);k<=Math.min(subdivisions-1,ix+n);k++){let d=Math.hypot(k*step-half-xx,j*step-half-zz);if(d<r)fn(j*stride+k,1-d/r)}}
 function relaxSoil(dt){
-const maxSlope=step*.72;let batch=Array.from(unstable).slice(0,160);
+const maxSlope=step*.66;let batch=Array.from(unstable).slice(0,360);
 for(const i of batch){unstable.delete(i);let ix=i%stride,iz=Math.floor(i/stride);if(ix<2||ix>subdivisions-2||iz<2||iz>subdivisions-2)continue;
-for(const j of [i-1,i+1,i-stride,i+stride]){let d=heights[i]-heights[j];if(Math.abs(d)>maxSlope+.004){let move=(Math.abs(d)-maxSlope)*Math.min(.24,dt*4)*Math.sign(d);change(i,heights[i]-move);change(j,heights[j]+move)}}}}
+for(const j of [i-1,i+1,i-stride,i+stride]){let d=heights[i]-heights[j];if(Math.abs(d)>maxSlope+.004){let move=(Math.abs(d)-maxSlope)*Math.min(.24,dt*5.5)*Math.sign(d);change(i,heights[i]-move);change(j,heights[j]+move)}}}}
 function refreshTerrain(){if(!dirty)return;pos.needsUpdate=true;geo.attributes.color.needsUpdate=true;let now=performance.now();if(now-lastNormals>80){geo.computeVertexNormals();lastNormals=now;dirty=false}}
 
 const earth=mat(0x8f785a,1),grass=mat(0x68764b,1),pine=mat(0x405a38,1),bark=mat(0x6a5440,1),stone=mat(0x77766a,1);
@@ -434,9 +434,9 @@ function hydraulicSamples(s){
  for(let j=0;j<24;j++){const theta=j*Math.PI/12,ny=Math.cos(theta),nz=Math.sin(theta);for(const side of [-1,0,1]){let best=null,score=-Infinity;for(const p of points){const x=p.y*ny+p.z*nz+side*p.x*.35;if(x>score){score=x;best=p}}if(best)result.push([best.x,best.y,best.z,0])}}
  hydraulicCache.set(key,result);return result;
 }
-const soilMat=new T.MeshStandardMaterial({color:0x947454,roughness:1,side:T.DoubleSide});
+const soilMat=weathered(new T.MeshStandardMaterial({color:0x967b60,roughness:1,side:T.DoubleSide}),2);
 const carried=mesh(tool,new T.BufferGeometry(),soilMat,0,0,0,false);carried.visible=false;
-const clodGeo=new T.IcosahedronGeometry(1,1),clodMat=mat(0x8d6c4e,1);
+const clodGeo=new T.IcosahedronGeometry(1,1),clodMat=weathered(mat(0x927556,1),2);
 const intake=new T.InstancedMesh(clodGeo,clodMat,64),falling=new T.InstancedMesh(clodGeo,clodMat,96);
 intake.count=falling.count=0;intake.frustumCulled=falling.frustumCulled=false;tool.add(intake);scene.add(falling);
 const clodDummy=new T.Object3D(),incoming=[],drops=[];
@@ -447,7 +447,7 @@ function clipFill(poly,ny,nz,level){let out=[];for(let i=0;i<poly.length;i++){co
 function fillPolygon(f,ny,nz){let lo=Infinity,hi=-Infinity;for(const [z,y] of cavity){let h=y*ny+z*nz;lo=Math.min(lo,h);hi=Math.max(hi,h)}let target=area(cavity)*Math.max(0,Math.min(.96,f*.96));for(let i=0;i<15;i++){let mid=(lo+hi)/2;if(area(clipFill(cavity,ny,nz,mid))<target)lo=mid;else hi=mid}return clipFill(cavity,ny,nz,(lo+hi)/2)}
 function updateFill(f,bw,ny,nz,now){carried.visible=f>.002;if(!carried.visible)return;if(now-lastFillTime<40&&Math.abs(f-lastFill)<.01)return;lastFillTime=now;lastFill=f;let points=fillPolygon(f,ny,nz);if(points.length<3)return;const sh=new T.Shape();points.forEach(([z,y],i)=>i?sh.lineTo(z,y):sh.moveTo(z,y));sh.closePath();const innerW=Math.max(.04,bw-(fillSpec?.thick||.02)*3);const g=new T.ExtrudeGeometry(sh,{depth:innerW,bevelEnabled:false});g.translate(0,0,-innerW/2);g.rotateY(-Math.PI/2);g.computeVertexNormals();carried.geometry.dispose();carried.geometry=g}
 function deposit(xx,zz,amount,radius){let cells=[],total=0;brush(xx,zz,radius,(i,w)=>{cells.push([i,w]);total+=w});if(total<=0)return false;for(const [i,w] of cells)change(i,heights[i]+amount*w/total/(step*step));return true}
-function launchDrops(amount,bw,s,cap){if(amount<=0||drops.length>=96)return 0;let n=Math.min(96-drops.length,Math.max(1,Math.min(5,Math.ceil(amount/(cap*.018)))));for(let i=0;i<n;i++){let start=tool.localToWorld(v((rnd()-.5)*bw*.76,fillSpec?fillSpec.lip[1]:.10,fillSpec?fillSpec.lip[0]:.74));let end=tool.localToWorld(v(0,fillSpec?fillSpec.lip[1]+fillSpec.normalY*.5:-.32,fillSpec?fillSpec.lip[0]+fillSpec.normalZ*.5:.95)),origin=tool.localToWorld(v(0,0,0));let vel=end.sub(origin).normalize().multiplyScalar(.18+rnd()*.45);vel.y-=.15;drops.push({p:start,vel,amount:amount/n,r:Math.max(.025,Math.cbrt(amount/n)*.42),life:0,spread:Math.max(.28,bw*s.scale*.62)})}return amount}
+function launchDrops(amount,bw,s,cap){if(amount<=0||drops.length>=96)return 0;let n=Math.min(96-drops.length,Math.max(1,Math.min(12,Math.ceil(amount/(cap*.006)))));for(let i=0;i<n;i++){let start=tool.localToWorld(v((rnd()-.5)*bw*.76,fillSpec?fillSpec.lip[1]:.10,fillSpec?fillSpec.lip[0]:.74));let end=tool.localToWorld(v(0,fillSpec?fillSpec.lip[1]+fillSpec.normalY*.5:-.32,fillSpec?fillSpec.lip[0]+fillSpec.normalZ*.5:.95)),origin=tool.localToWorld(v(0,0,0));let vel=end.sub(origin).normalize().multiplyScalar(.18+rnd()*.45);vel.y-=.15;drops.push({p:start,vel,amount:amount/n,r:Math.max(.012,Math.cbrt(amount/n)*.48),life:0,spread:Math.max(step*1.15,bw*s.scale*.18)})}return amount}
 function animateSoil(dt){intake.count=0;incoming.length=0;
 for(let i=drops.length-1;i>=0;i--){let p=drops[i];p.life+=dt;p.vel.y-=9.81*dt;p.p.addScaledVector(p.vel,dt);if(p.p.y<=heightAt(p.p.x,p.p.z)+p.r*.4||p.life>4){if(!deposit(p.p.x,p.p.z,p.amount,p.spread))deposit(Math.max(-half+.5,Math.min(half-.5,p.p.x)),Math.max(-half+.5,Math.min(half-.5,p.p.z)),p.amount,p.spread);drops.splice(i,1)}}falling.count=drops.length;drops.forEach((p,i)=>{clodDummy.position.copy(p.p);clodDummy.scale.set(p.r,p.r*.85,p.r*.9);clodDummy.rotation.set(p.life*5,i,p.life*3);clodDummy.updateMatrix();falling.setMatrixAt(i,clodDummy.matrix)});falling.instanceMatrix.needsUpdate=true;}
 function resetTerrain(){heights.set(initial);for(let i=0;i<pos.count;i++){pos.setY(i,heights[i]);paintVertex(i)}pos.needsUpdate=true;geo.attributes.color.needsUpdate=true;geo.computeVertexNormals();soil=0;pendingCut=0;workMode='';previousTip=null;previousK=null;previousA=null;dumping=false;spillDelay=0;carried.visible=false;incoming.length=drops.length=0;intake.count=falling.count=0;dirty=false;unstable.clear();lastSoilInfo='';lastFill=-1;lastFillTime=-1}
@@ -500,7 +500,7 @@ function contactProfile(s){
  let edgeGap=Infinity,backGap=Infinity,lowestBack=back;
  for(const f of [-.47,0,.47]){
   const p=toolPoint(s,bw*f,ty,tz);edgeGap=Math.min(edgeGap,p.y-heightAt(p.x,p.z));
-  for(const [z,y] of q.shell.slice(1,-1)){const pt=toolPoint(s,bw*f,y,z),gap=pt.y-heightAt(pt.x,pt.z);if(gap<backGap){backGap=gap;lowestBack=pt}}
+  for(const [z,y] of q.shell.slice(1,-1)){const pt=toolPoint(s,bw*f,y,z),gap=pt.y-heightAt(pt.x,pt.z);if(gap<backGap){backGap=gap;lowestBack=toolPoint(s,0,y,z)}}
  }
  const angle=s.b+s.a+s.k,backDown=Math.cos(angle)<-.10;
  return {bw,lip,back:lowestBack,axis,edgeGap,backGap,backDown,ny:q.normalY,nz:q.normalZ};
@@ -536,9 +536,11 @@ function preCut(prev,next){
  const grading=backFirst||(p.backDown&&p.backGap<.06*next.scale&&p.edgeGap>p.backGap-.025*next.scale)||(movingAgainstMouth&&p.backGap<.07*next.scale);
  if(grading){
   const gx=p.back.x-old.back.x,gz=p.back.z-old.back.z,gy=p.back.y-old.back.y,slide=Math.hypot(gx,gz);
-  if(p.backGap>-.12*next.scale&&slide>1e-6&&Math.abs(gy)<slide*.85&&actuated){
-   const removed=editStrip(p.back,p.axis,width,p.back.y,Math.min(.035*next.scale,slide*.85),slide);
-   redistribute(p.back,p.axis,width,removed,gx,gz);
+  if(p.backGap>-.16*next.scale&&slide>1e-6&&Math.abs(gy)<slide*1.1&&actuated){
+   // Sweep the actual heel footprint. The center cannot jump between the left and right edges.
+   const mid={x:(p.back.x+old.back.x)*.5,z:(p.back.z+old.back.z)*.5,y:(p.back.y+old.back.y)*.5};
+   const removed=editStrip(mid,p.axis,width,mid.y,Math.min(.06*next.scale,slide*1.6),slide+step*.55);
+   redistribute(mid,p.axis,width,removed,gx,gz);
    return removed>0?'整地':'背面接地';
   }
   return '背面接地';
@@ -566,20 +568,34 @@ function preCut(prev,next){
 }
 function resolveMotion(prev,next){
  if(!next.active||!next.engine||!next.unlocked)return next;
- const before=soil;workMode=preCut(prev,next);const cutting=workMode==='掘削'||workMode==='鋤取り';
- function reconcile(accepted){
-  if(cutting&&soil>before){const p=contactProfile(prev),q=contactProfile(next),r=contactProfile(accepted),d=Math.hypot(q.lip.x-p.lip.x,q.lip.y-p.lip.y,q.lip.z-p.lip.z),actual=Math.hypot(r.lip.x-p.lip.x,r.lip.y-p.lip.y,r.lip.z-p.lip.z);
-   const rejected=(soil-before)*(1-Math.min(1,actual/Math.max(d,1e-9)));if(rejected>0){soil-=rejected;pendingCut=Math.max(0,pendingCut-rejected);redistribute(r.lip,r.axis,r.bw*accepted.scale,rejected,r.lip.x-p.lip.x,r.lip.z-p.lip.z)}
-  }
-  return accepted;
+ const keys=['x','z','yaw','swing','b','a','k'];
+ if(keys.every(k=>Math.abs(next[k]-prev[k])<1e-9))return next;
+ const before=soil,pendingBefore=pendingCut;
+ const old=contactProfile(prev),target=contactProfile(next);
+ const isGrading=!!(old&&target&&target.backGap<.07*next.scale&&target.backGap<=target.edgeGap+.02*next.scale&&Math.abs(next.a-prev.a)>1e-8);
+ // A shallow, moving heel may compact/shave soil. A stationary bucket is solid.
+ const permitted=isGrading?.045*next.scale:0;
+ function rollback(){
+  const tx=terrainTransaction;terrainTransaction=null;
+  for(const [i,y] of tx)change(i,y);soil=before;pendingCut=pendingBefore;
  }
- const baseline=collisionDepth(prev,cutting),limit=baseline+.00002;
- if(collisionDepth(next,cutting)<=limit)return reconcile(next);
- const keys=['x','z','yaw','swing','b','a','k'];let lo=0,hi=1;
- for(let i=0;i<12;i++){let mid=(lo+hi)/2,p={...next};for(const key of keys)p[key]=prev[key]+(next[key]-prev[key])*mid;if(collisionDepth(p,cutting)<=limit)lo=mid;else hi=mid}
- let accepted={...next};for(const key of keys)accepted[key]=prev[key]+(next[key]-prev[key])*lo;
- for(const key of ['b','a','k','swing','yaw','x','z']){let candidate={...accepted,[key]:next[key]};if(collisionDepth(candidate,cutting)<=limit)accepted=candidate}
- accepted.contact=true;return reconcile(accepted);
+ function attempt(q,commit){
+  terrainTransaction=new Map();const mode=preCut(prev,q),cutting=mode==='掘削'||mode==='鋤取り';
+  const limit=Math.max(collisionDepth(prev,cutting),permitted)+.00008;
+  const ok=collisionDepth(q,cutting)<=limit;
+  if(ok&&commit){terrainTransaction=null;workMode=mode;return true}
+  rollback();return ok;
+ }
+ if(attempt(next,true))return next;
+ // Preserve the requested boom/arm/bucket ratio instead of accepting each axis
+ // independently. Independent advancement was bending a coordinated grading pass.
+ let lo=0,hi=1,accepted={...prev,aux:next.aux};const lerp=t=>{const q={...next};for(const key of keys)q[key]=prev[key]+(next[key]-prev[key])*t;return q};
+ for(let i=0;i<10;i++){const mid=(lo+hi)*.5;if(attempt(lerp(mid),false))lo=mid;else hi=mid}
+ accepted=lerp(lo);
+ // Allow a manually commanded boom lift to release the contact without
+ // forcing the arm or bucket to follow a computer-generated level line.
+ if(next.b>accepted.b){const q={...accepted,b:next.b};if(attempt(q,false))accepted=q}
+ attempt(accepted,true);accepted.contact=true;return accepted;
 }
 
 
@@ -679,7 +695,7 @@ function inspect(s){
  let meshes=0,vertices=0,invalid=0;const bounds=new T.Box3();
  base.traverseVisible(o=>{if(!o.isMesh)return;meshes++;const a=o.geometry?.attributes?.position;if(!a)return;vertices+=a.count;const b=new T.Box3().setFromObject(o);if(!b.isEmpty()){for(const value of [...b.min.toArray(),...b.max.toArray()])if(!Number.isFinite(value))invalid++;bounds.union(b)}});
  const gl=renderer.getContext(),errors=[];for(let i=0;i<16;i++){const code=gl.getError();if(code===gl.NO_ERROR)break;errors.push(code)}
- let screenOverflow=0;if(!s.cab){for(const x of [exteriorBounds.min.x,exteriorBounds.max.x])for(const y of [exteriorBounds.min.y,exteriorBounds.max.y])for(const z of [exteriorBounds.min.z,exteriorBounds.max.z]){const q=v(x,y,z).project(camera);screenOverflow=Math.max(screenOverflow,Math.abs(q.x)-1,Math.abs(q.y)-1)}}return {screenOverflow,model:machineProfile(s).id,attachment:s.att,view:s.cab?'cab':'outside',meshCount:meshes,vertexCount:vertices,invalidBounds:invalid,tipErrorM:gap,bounds:{min:bounds.min.toArray(),max:bounds.max.toArray()},camera:camera.position.toArray(),cameraDirection:camera.getWorldDirection(v(0,0,0)).toArray(),soil,terrainMin:Math.min(...heights),linkValid:linkGeometry(s).valid,webglErrors:errors,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles};
+ let screenOverflow=0;if(!s.cab){for(const x of [exteriorBounds.min.x,exteriorBounds.max.x])for(const y of [exteriorBounds.min.y,exteriorBounds.max.y])for(const z of [exteriorBounds.min.z,exteriorBounds.max.z]){const q=v(x,y,z).project(camera);screenOverflow=Math.max(screenOverflow,Math.abs(q.x)-1,Math.abs(q.y)-1)}}return {lip:visual.toArray(),contact:contactProfile(s),angles:[s.b,s.a,s.k,s.swing],screenOverflow,model:machineProfile(s).id,attachment:s.att,view:s.cab?'cab':'outside',meshCount:meshes,vertexCount:vertices,invalidBounds:invalid,tipErrorM:gap,bounds:{min:bounds.min.toArray(),max:bounds.max.toArray()},camera:camera.position.toArray(),cameraDirection:camera.getWorldDirection(v(0,0,0)).toArray(),soil,terrainMin:Math.min(...heights),linkValid:linkGeometry(s).valid,webglErrors:errors,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles};
 }
 return {draw,resetTerrain,resolveMotion,inspect,photoAssetsReady};
 }

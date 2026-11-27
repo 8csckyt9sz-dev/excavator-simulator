@@ -5,7 +5,7 @@ renderer.setPixelRatio(Math.min(devicePixelRatio,1.6));renderer.shadowMap.enable
 scene.background=new T.Color(0xb8d0e0);scene.fog=new T.FogExp2(0xb8c9d1,.007);
 scene.add(new T.HemisphereLight(0xe1efff,0x8c7858,1.45));const sun=new T.DirectionalLight(0xffedcf,2.65);sun.position.set(-18,28,12);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);Object.assign(sun.shadow.camera,{left:-14,right:14,top:14,bottom:-14,near:.5,far:80});sun.shadow.bias=-.00025;sun.shadow.normalBias=.03;scene.add(sun,sun.target);
 const mat=(color,roughness=.7,metalness=0)=>new T.MeshStandardMaterial({color,roughness,metalness});
-const paint=mat(0xe4a622,.43,.23),edge=mat(0xbc8012,.55,.35),steel=mat(0x343b3e,.63,.55),track=mat(0x302e29,.9,.35),shoe=mat(0x55534a,.85,.4),rubber=mat(0x15191a,.95),chrome=mat(0xcdd7dd,.20,.82),inner=mat(0x454a46,.9),seatMat=mat(0x272d30,.92),glass=new T.MeshStandardMaterial({color:0x9ab9c8,transparent:true,opacity:.14,roughness:.18,metalness:.1,depthWrite:false,side:T.DoubleSide}),screen=mat(0x193129,.5);
+const paint=mat(0x159d9b,.43,.23),edge=mat(0x117b79,.55,.35),steel=mat(0x343b3e,.63,.55),track=mat(0x302e29,.9,.35),shoe=mat(0x55534a,.85,.4),rubber=mat(0x15191a,.95),chrome=mat(0xcdd7dd,.20,.82),inner=mat(0x454a46,.9),seatMat=mat(0x272d30,.92),glass=new T.MeshStandardMaterial({color:0x9ab9c8,transparent:true,opacity:.14,roughness:.18,metalness:.1,depthWrite:false,side:T.DoubleSide}),screen=mat(0x193129,.5);
 const v=(x,y,z)=>new T.Vector3(x,y,z);function group(parent,x=0,y=0,z=0){const g=new T.Group();g.position.set(x,y,z);parent.add(g);return g}function mesh(parent,geo,m,x=0,y=0,z=0,shadow=true){const o=new T.Mesh(geo,m);o.position.set(x,y,z);o.castShadow=shadow;o.receiveShadow=true;parent.add(o);return o}function box(p,m,x,y,z,w,h,d){return mesh(p,new T.BoxGeometry(w,h,d),m,x,y,z)}function cyl(p,m,x,y,z,r,h,axis='y',r2=r){const o=mesh(p,new T.CylinderGeometry(r,r2,h,16),m,x,y,z);if(axis==='x')o.rotation.z=Math.PI/2;if(axis==='z')o.rotation.x=Math.PI/2;return o}function segment(p,m,r){return mesh(p,new T.CylinderGeometry(r,r,1,12),m)}function place(o,a,b){o.position.copy(a).add(b).multiplyScalar(.5);const d=b.clone().sub(a);o.scale.y=Math.max(.001,d.length());o.quaternion.setFromUnitVectors(v(0,1,0),d.normalize())}
 function extrude(p,m,points,width,x=0,y=0,z=0,bevel=.035){const sh=new T.Shape();points.forEach(([zz,yy],i)=>i?sh.lineTo(zz,yy):sh.moveTo(zz,yy));sh.closePath();const g=new T.ExtrudeGeometry(sh,{depth:width,bevelEnabled:bevel>0,bevelSize:bevel,bevelThickness:bevel,bevelSegments:2,steps:1});g.translate(0,0,-width/2);g.rotateY(-Math.PI/2);return mesh(p,g,m,x,y,z)}
 let seed=9127;function rnd(){seed=(seed*1664525+1013904223)>>>0;return seed/4294967296}
@@ -54,11 +54,11 @@ extrude(upper,paint,[[-1.43,1.02],[-1.55,1.23],[-1.55,1.59],[-1.46,1.72],[-1.31,
 extrude(upper,paint,[[-.61,1.04],[-.61,1.72],[.34,1.72],[.60,1.51],[.63,1.04]],.83,.53,0,0,.045);
 box(upper,steel,-.60,1.13,.02,.76,.22,1.18);for(let i=0;i<3;i++)box(upper,shoe,-1.00,1.05+i*.12,.48-i*.20,.24,.05,.22);
 for(let i=0;i<3;i++)box(upper,rubber,.98,1.63,-.75+i*.22,.018,.022,.15);
-const panelLine=mat(0x6c501f,.8);box(upper,panelLine,.976,1.44,-.49,.013,.45,.018);box(upper,panelLine,.976,1.18,-.75,.013,.015,.53);
+const panelLine=mat(0x164b4b,.8);box(upper,panelLine,.976,1.44,-.49,.013,.45,.018);box(upper,panelLine,.976,1.18,-.75,.013,.015,.53);
 for(const xx of [-.69,.69]){box(upper,steel,xx,1.43,-1.55,.21,.13,.035);box(upper,mat(0xb64423,.35),xx,1.43,-1.574,.15,.08,.015)}
 
 box(upper,steel,0,1.01,-.35,1.98,.12,2.1);box(upper,paint,.61,1.91,-.60,.67,.22,1.30);box(upper,steel,.62,2.04,-.67,.58,.025,.62);for(let i=0;i<9;i++)box(upper,rubber,.965,1.43,-1.14+i*.10,.022,.20,.035);box(upper,steel,.97,1.23,-.24,.025,.09,.35);cyl(upper,steel,.68,2.12,-1.15,.055,.28);box(upper,edge,.37,1.47,.52,.55,.70,.64);
-box(cab,inner,0,.03,0,.91,.12,1.36);box(cab,paint,0,1.16,-.02,.98,.11,1.42);box(cab,steel,0,1.09,.02,.92,.045,1.32);
+box(cab,inner,0,.03,0,.91,.12,1.36);box(cab,steel,0,1.16,-.02,.98,.11,1.42);box(cab,steel,0,1.09,.02,.92,.045,1.32);
 for(const xx of [-.43,.43])for(const zz of [-.61,.61])box(cab,steel,xx,.60,zz,.075,1.1,.075);
 for(const xx of [-.43,.43]){box(cab,steel,xx,.14,0,.065,.09,1.25);box(cab,steel,xx,1.06,0,.065,.06,1.25);box(cab,glass,xx,.60,0,.012,.91,1.16)}
 box(cab,glass,0,.60,.61,.82,.91,.012);box(cab,glass,0,.60,-.61,.82,.91,.012);box(cab,steel,0,.22,.61,.84,.06,.065);box(cab,rubber,-.43,.60,.36,.022,.91,.032);box(cab,steel,-.44,.54,.05,.035,.04,.17);// Park the front wiper against the outside lower window edge.
@@ -171,15 +171,15 @@ function contactProfile(s){
  const ty=s.att===1?.18:.26,tz=s.att===1?.79:.97;
  const lip=toolPoint(s,0,ty,tz),back=toolPoint(s,0,.39,.32);
  const t=s.yaw+s.swing,axis={x:-Math.cos(t),z:-Math.sin(t)};
- let edgeGap=Infinity,backGap=Infinity;
+ let edgeGap=Infinity,backGap=Infinity,lowestBack=back;
  for(const f of [-.45,0,.45]){
   const p=toolPoint(s,bw*f,ty,tz);edgeGap=Math.min(edgeGap,p.y-heightAt(p.x,p.z));
   for(const [z,y] of [[.16,.32],[.32,.39],[.49,.38],[.63,.31]]){
-   const p=toolPoint(s,bw*f,y,z);backGap=Math.min(backGap,p.y-heightAt(p.x,p.z));
+   const p=toolPoint(s,bw*f,y,z);const gap=p.y-heightAt(p.x,p.z);if(gap<backGap){backGap=gap;lowestBack=p}
   }
  }
- const angle=s.b+s.a+s.k,backDown=Math.cos(angle)<-.35;
- return {bw,lip,back,axis,edgeGap,backGap,backDown};
+ const angle=s.b+s.a+s.k,backDown=Math.cos(angle)<-.10;
+ return {bw,lip,back:lowestBack,axis,edgeGap,backGap,backDown};
 }
 function redistribute(p,axis,width,amount,dx,dz){
  if(amount<=0)return;
@@ -207,25 +207,28 @@ function preCut(prev,next){
  const leading=(-Math.sin(t)*dx+Math.cos(t)*dz)*mouthZ;
  // A low back is a solid contact, not a cutting edge. Shallow horizontal
  // sliding on the belly may shave humps; it can never collect soil.
- const backFirst=p.backGap<p.edgeGap-.025*next.scale;
- if(p.backDown&&backFirst&&p.backGap<.045*next.scale&&p.backGap>-.16*next.scale){
+ const backFirst=p.backGap<=p.edgeGap+.045*next.scale&&p.backGap<.065*next.scale;
+ const movingAgainstMouth=horiz>1e-7&&leading< -horiz*.15;
+ const grading=backFirst||(p.backDown&&p.backGap<.085*next.scale)||(movingAgainstMouth&&p.backGap<.07*next.scale);
+ if(grading){
   const gx=p.back.x-old.back.x,gz=p.back.z-old.back.z,gy=p.back.y-old.back.y,slide=Math.hypot(gx,gz);
-  if(slide>1e-6&&Math.abs(gy)<slide*.85&&actuated){
+  if(p.backGap>-.12*next.scale&&slide>1e-6&&Math.abs(gy)<slide*.85&&actuated){
    const removed=editStrip(p.back,p.axis,width,p.back.y,Math.min(.035*next.scale,slide*.85),slide);
    redistribute(p.back,p.axis,width,removed,gx,gz);
    return removed>0?'整地':'背面接地';
   }
-  return '';
+  return '背面接地';
  }
  if(backFirst||p.edgeGap>.025*next.scale||travel<1e-7||!actuated)return '';
  // Use the actual lip only; a closed bucket back or side cannot excavate.
- const cut=closing||(pulling&&leading>=-horiz*.35)||(horiz>1e-7&&leading>horiz*.20&&next.k<=prev.k+1e-7);
+ const mouthY=-.9*Math.cos(angle)+.44*Math.sin(angle);const intoMouth=leading+dy*mouthY;
+ const cut=(closing||pulling)&&intoMouth>travel*.08&&!movingAgainstMouth;
  if(!cut)return '';
  const shallow=Math.abs(dy)<horiz*.65&&p.edgeGap>-.12*next.scale;
  let removed=0,count=Math.min(6,Math.max(1,Math.ceil(travel/(step*.4))));
  for(let j=1;j<=count;j++){
   const q={...next};for(const key of ['x','z','yaw','swing','b','a','k'])q[key]=prev[key]+(next[key]-prev[key])*j/count;
-  const pt=contactProfile(q);if(pt.backGap<pt.edgeGap-.025*q.scale||pt.edgeGap>.025*q.scale)continue;
+  const pt=contactProfile(q);if((pt.backGap<=pt.edgeGap+.045*q.scale&&pt.backGap<.065*q.scale)||(pt.backDown&&pt.backGap<.085*q.scale)||pt.edgeGap>.025*q.scale)continue;
   removed+=editStrip(pt.lip,pt.axis,width,pt.lip.y-.008*q.scale,Math.max(.002*q.scale,travel*.95/count),travel/count);
  }
  if(removed<=0)return '';
@@ -309,7 +312,7 @@ let info=bucket?'土量 '+Math.round(soil*1000)/1000+' / '+Math.round(capacity*1
 let width=0,height=0;
 
 function draw(s){const w=canvas.clientWidth,h=canvas.clientHeight;if(w!==width||h!==height){width=w;height=h;renderer.setSize(w,h,false);camera.aspect=w/Math.max(1,h);camera.fov=2*Math.atan(Math.max(Math.tan(29*Math.PI/180),Math.tan(27*Math.PI/180)/camera.aspect))*180/Math.PI;camera.fov=Math.min(108,camera.fov);camera.updateProjectionMatrix()}base.position.set(-s.x,heightAt(-s.x,s.z),s.z);base.rotation.y=-s.yaw;base.scale.set(-s.scale,s.scale,s.scale);upper.rotation.y=s.swing;boom.rotation.x=-s.b;arm.rotation.x=-s.a;tool.rotation.x=-s.k;tools.forEach((o,i)=>o.visible=i===s.att);for(const pair of jaws){pair[0].rotation.y=-s.aux*.34;pair[1].rotation.y=s.aux*.34}adjust(lift,v(.38,1.13,.76),v(.38,1.45+Math.sin(s.b)*1.25, .55+Math.cos(s.b)*1.25));adjust(stickCylinder,v(0,.23,.62),v(0,Math.sin(s.a)*.48,2.25+Math.cos(s.a)*.48));adjust(bucketCylinder,v(0,.15,.57),v(0,Math.sin(s.k)*.23,1.65+Math.cos(s.k)*.23));const inside=s.cab&&s.active;
-base.updateMatrixWorld(true);soilStep(s);const local=(p,g=upper)=>g.localToWorld(p);if(inside){camera.position.copy(local(v(-.60,2.35,.29)));camera.lookAt(local(v(-.13,1.60,6)))}else{camera.position.copy(local(v(-6.5,4.1,6.8),base));camera.lookAt(local(v(s.active?0:2.9,1.35,.95),base))}camera.updateMatrixWorld();sun.position.set(-s.x-18,28,s.z+12);sun.target.position.set(-s.x,0,s.z);
+base.updateMatrixWorld(true);soilStep(s);const local=(p,g=upper)=>g.localToWorld(p);if(inside){camera.position.copy(local(v(-.63,2.37,.12)));camera.lookAt(local(v(-.63,1.56,7.2)))}else{camera.position.copy(local(v(-6.5,4.1,6.8),base));camera.lookAt(local(v(s.active?0:2.9,1.35,.95),base))}camera.updateMatrixWorld();sun.position.set(-s.x-18,28,s.z+12);sun.target.position.set(-s.x,0,s.z);
 const status=s.engine+'/'+s.unlocked;if(status!==lastDisplay){lastDisplay=status;dc.fillStyle='#14201c';dc.fillRect(0,0,256,192);dc.fillStyle=s.engine?'#a0e6a4':'#8a9993';dc.font='bold 23px monospace';dc.fillText(s.engine?'ENGINE ON':'STANDBY',15,40);dc.font='19px monospace';dc.fillText(s.unlocked?'HYD READY':'LOCKED',15,79);dc.fillStyle='#64746a';dc.fillRect(15,112,226,18);dc.fillStyle='#d3ba65';dc.fillRect(15,112,s.engine?155:10,18);dc.font='15px monospace';dc.fillText('FUEL    TEMP',15,155);displayTex.needsUpdate=true}
 renderer.render(scene,camera)}
 return {draw,resetTerrain,resolveMotion};

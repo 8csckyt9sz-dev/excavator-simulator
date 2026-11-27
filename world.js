@@ -29,10 +29,14 @@ const groundMaterial=new T.MeshStandardMaterial({color:0xffffff,vertexColors:tru
 const ground=mesh(scene,geo,groundMaterial,0,0,0,false);
 const outerMat=new T.MeshStandardMaterial({map:dirt,roughness:1,color:0xb5a18a});
 for(const [xx,zz,ww,dd] of [[0,-101,202,158],[0,101,202,158],[-101,0,158,44],[101,0,158,44]]){const outer=mesh(scene,new T.PlaneGeometry(ww,dd),outerMat,xx,-.015,zz,false);outer.rotation.x=-Math.PI/2}
-let dirty=false,lastNormals=0;
+let dirty=false,lastNormals=0;const unstable=new Set();
 function heightAt(xx,zz){let u=(xx+half)/step,w=(zz+half)/step;if(u<0||w<0||u>=subdivisions||w>=subdivisions)return 0;let ix=Math.floor(u),iz=Math.floor(w),dx=u-ix,dz=w-iz,i=iz*stride+ix;return (heights[i]*(1-dx)+heights[i+1]*dx)*(1-dz)+(heights[i+stride]*(1-dx)+heights[i+stride+1]*dx)*dz}
-function change(i,y){heights[i]=y;pos.setY(i,y);paintVertex(i);dirty=true}
+function change(i,y){if(Math.abs(heights[i]-y)<1e-7)return;heights[i]=y;pos.setY(i,y);paintVertex(i);dirty=true;unstable.add(i)}
 function brush(xx,zz,r,fn){let ix=Math.round((xx+half)/step),iz=Math.round((zz+half)/step),n=Math.ceil(r/step);for(let j=Math.max(1,iz-n);j<=Math.min(subdivisions-1,iz+n);j++)for(let k=Math.max(1,ix-n);k<=Math.min(subdivisions-1,ix+n);k++){let d=Math.hypot(k*step-half-xx,j*step-half-zz);if(d<r)fn(j*stride+k,1-d/r)}}
+function relaxSoil(dt){
+const maxSlope=step*.72;let batch=Array.from(unstable).slice(0,160);
+for(const i of batch){unstable.delete(i);let ix=i%stride,iz=Math.floor(i/stride);if(ix<2||ix>subdivisions-2||iz<2||iz>subdivisions-2)continue;
+for(const j of [i-1,i+1,i-stride,i+stride]){let d=heights[i]-heights[j];if(Math.abs(d)>maxSlope+.004){let move=(Math.abs(d)-maxSlope)*Math.min(.24,dt*4)*Math.sign(d);change(i,heights[i]-move);change(j,heights[j]+move)}}}}
 function refreshTerrain(){if(!dirty)return;pos.needsUpdate=true;geo.attributes.color.needsUpdate=true;let now=performance.now();if(now-lastNormals>80){geo.computeVertexNormals();lastNormals=now;dirty=false}}
 
 const earth=mat(0x8f785a,1),grass=mat(0x68764b,1),pine=mat(0x405a38,1),bark=mat(0x6a5440,1),stone=mat(0x77766a,1);
@@ -121,7 +125,7 @@ function deposit(xx,zz,amount,radius){let cells=[],total=0;brush(xx,zz,radius,(i
 function launchDrops(amount,bw,s,cap){if(amount<=0||drops.length>=96)return 0;let n=Math.min(96-drops.length,Math.max(1,Math.min(5,Math.ceil(amount/(cap*.018)))));for(let i=0;i<n;i++){let start=tool.localToWorld(v((rnd()-.5)*bw*.76,.10,.74+rnd()*.10));let end=tool.localToWorld(v(0,-.32,.95)),origin=tool.localToWorld(v(0,0,0));let vel=end.sub(origin).normalize().multiplyScalar(.18+rnd()*.45);vel.y-=.15;drops.push({p:start,vel,amount:amount/n,r:Math.max(.025,Math.cbrt(amount/n)*.42),life:0,spread:Math.max(.28,bw*s.scale*.62)})}return amount}
 function animateSoil(dt){let transit=0;for(let i=incoming.length-1;i>=0;i--){let p=incoming[i];p.t+=dt;if(p.t>=p.life)incoming.splice(i,1);else transit+=p.amount*(1-p.t/p.life)}intake.count=incoming.length;incoming.forEach((p,i)=>{let t=p.t/p.life,sm=t*t*(3-2*t);clodDummy.position.copy(p.start).lerp(p.end,sm);clodDummy.position.y-=Math.sin(t*Math.PI)*.13;clodDummy.scale.set(p.size,p.size*.8,p.size*.9);clodDummy.rotation.set(t*3,i,t*5);clodDummy.updateMatrix();intake.setMatrixAt(i,clodDummy.matrix)});intake.instanceMatrix.needsUpdate=true;
 for(let i=drops.length-1;i>=0;i--){let p=drops[i];p.life+=dt;p.vel.y-=9.81*dt;p.p.addScaledVector(p.vel,dt);if(p.p.y<=heightAt(p.p.x,p.p.z)+p.r*.4||p.life>4){if(!deposit(p.p.x,p.p.z,p.amount,p.spread))deposit(Math.max(-half+.5,Math.min(half-.5,p.p.x)),Math.max(-half+.5,Math.min(half-.5,p.p.z)),p.amount,p.spread);drops.splice(i,1)}}falling.count=drops.length;drops.forEach((p,i)=>{clodDummy.position.copy(p.p);clodDummy.scale.set(p.r,p.r*.85,p.r*.9);clodDummy.rotation.set(p.life*5,i,p.life*3);clodDummy.updateMatrix();falling.setMatrixAt(i,clodDummy.matrix)});falling.instanceMatrix.needsUpdate=true;return transit}
-function resetTerrain(){heights.set(initial);for(let i=0;i<pos.count;i++){pos.setY(i,heights[i]);paintVertex(i)}pos.needsUpdate=true;geo.attributes.color.needsUpdate=true;geo.computeVertexNormals();soil=0;previousTip=null;previousK=null;previousA=null;dumping=false;spillDelay=0;carried.visible=false;incoming.length=drops.length=0;intake.count=falling.count=0;dirty=false;lastSoilInfo='';lastFill=-1;lastFillTime=-1}
+function resetTerrain(){heights.set(initial);for(let i=0;i<pos.count;i++){pos.setY(i,heights[i]);paintVertex(i)}pos.needsUpdate=true;geo.attributes.color.needsUpdate=true;geo.computeVertexNormals();soil=0;previousTip=null;previousK=null;previousA=null;dumping=false;spillDelay=0;carried.visible=false;incoming.length=drops.length=0;intake.count=falling.count=0;dirty=false;unstable.clear();lastSoilInfo='';lastFill=-1;lastFillTime=-1}
 // Isolate arm/bucket cutting travel from boom, swing and track motion.
 function scoopTravel(b,a,k,oldA,oldK,tipY,tipZ){
  if(oldA===null||oldK===null||!(a<oldA-1e-8||k<oldK-1e-8))return 0;
@@ -130,6 +134,42 @@ function scoopTravel(b,a,k,oldA,oldK,tipY,tipZ){
  const ny=-.9*Math.cos(t)+.44*Math.sin(t),nz=.9*Math.sin(t)+.44*Math.cos(t);
  return Math.max(0,(p[0]-q[0])*ny+(p[1]-q[1])*nz);
 }
+
+const bucketWidths=[.77,1.30,.38,0,0,.82,0,0];
+const toolSamples=Array.from({length:8},(_,att)=>{
+ const points=[],bw=bucketWidths[att];
+ if(bw){for(const xx of [-bw*.48,0,bw*.48]){
+  for(const [zz,yy] of [[-.09,.035],[.025,.19],[.16,.32],[.32,.39],[.49,.38],[.63,.31],[.74,.23],[.12,-.095]])points.push([xx,yy,zz,0]);
+  points.push([xx,.18,.79,1]);if(att!==1)points.push([xx,.26,.97,1]);
+ }}else if(att===3){for(const [zz,yy] of [[.05,-.16],[.45,-.17],[.85,-.16],[1.25,0]])points.push([0,yy,zz,0],[.14,yy,zz,0],[-.14,yy,zz,0])}
+ else if(att===4){for(const xx of [-.32,.32])for(const zz of [.1,.5,1.0])points.push([xx,-.17,zz,0])}
+ else{for(const xx of [-.32,0,.32])for(const zz of [.1,.45,.94])points.push([xx,-.15,zz,0],[xx,.15,zz,0])}
+ return points;
+});
+function collisionDepth(s,cutting){
+ const angle=s.b+s.a+s.k,armAngle=s.b+s.a,t=s.yaw+s.swing,cs=Math.cos(t),sn=Math.sin(t),baseY=heightAt(-s.x,s.z),sc=s.scale;
+ const hy=1.45+2.25*Math.sin(s.b)+1.65*Math.sin(armAngle),hz=.55+2.25*Math.cos(s.b)+1.65*Math.cos(armAngle);
+ let worst=0;
+ function sample(xx,yy,zz,allow){
+  const lx=.38+xx,wx=-s.x-sc*(lx*cs+zz*sn),wz=s.z+sc*(-lx*sn+zz*cs),wy=baseY+sc*yy;
+  worst=Math.max(worst,heightAt(wx,wz)-wy-allow*sc);
+ }
+ for(const [xx,yy,zz,lip] of toolSamples[s.att]||[]){sample(xx,hy+yy*Math.cos(angle)+zz*Math.sin(angle),hz-yy*Math.sin(angle)+zz*Math.cos(angle),lip?(cutting?.20:.065):(cutting?.09:.025))}
+ for(const d of [.3,.7,1.15,1.58]){sample(0,1.45+2.25*Math.sin(s.b)+d*Math.sin(armAngle)-.12,.55+2.25*Math.cos(s.b)+d*Math.cos(armAngle),.015)}
+ return worst;
+}
+function resolveMotion(prev,next){
+ if(!next.active||!next.engine||!next.unlocked)return next;
+ const bw=bucketWidths[next.att],cutting=!!bw&&soil<(next.capacity||.25)*([1,1.15,.55,0,0,.8,0,0][next.att]||1)&&scoopTravel(next.b,next.a,next.k,prev.a,prev.k,next.att===1?.18:.26,next.att===1?.79:.97)>1e-8;
+ const baseline=collisionDepth(prev,cutting),limit=baseline+.00002;
+ if(collisionDepth(next,cutting)<=limit)return next;
+ const keys=['x','z','yaw','swing','b','a','k'];let lo=0,hi=1;
+ for(let i=0;i<12;i++){let mid=(lo+hi)/2,p={...next};for(const key of keys)p[key]=prev[key]+(next[key]-prev[key])*mid;if(collisionDepth(p,cutting)<=limit)lo=mid;else hi=mid}
+ let accepted={...next};for(const key of keys)accepted[key]=prev[key]+(next[key]-prev[key])*lo;
+ for(const key of ['b','a','k','swing','yaw','x','z']){let candidate={...accepted,[key]:next[key]};if(collisionDepth(candidate,cutting)<=limit)accepted=candidate}
+ accepted.contact=true;return accepted;
+}
+
 function soilStep(s){
 const dt=Math.max(0,Math.min(.075,s.dt||0));const bucket=[0,1,2,5].includes(s.att),capacity=Math.max(.01,(s.capacity||.25)*([1,1.15,.55,0,0,.8,0,0][s.att]||1));
 const tipY=s.att===1?.18:.26,tipZ=s.att===1?.79:.97;
@@ -151,22 +191,22 @@ if(dumping){const amount=Math.min(soil,capacity*dt*(.22+Math.max(0,-mouth.y)*1.5
 else if(soil<capacity&&previousTip&&cutTravel>1e-7&&dk<=.00005){
  // A genuine cut needs a submerged cutting edge and movement into the bucket mouth.
  // No soil is loaded from vertical boom contact, swing, travel, opening, or a stationary bucket.
- const before=soil,bite=.035*s.scale;
+ const before=soil,bite=.018*s.scale;let displaced=0;
  const samples=Math.min(12,Math.max(1,Math.ceil(movement/(step*.45))));
  for(let j=1;j<=samples;j++){
   const p=previousTip.clone().lerp(tooth,j/samples),penetration=heightAt(p.x,p.z)-p.y;
   if(penetration<=bite)continue;
-  const budget=cutTravel/samples*.65*Math.min(1,(penetration-bite)/(.18*s.scale));
-  brush(p.x,p.z,radius,(i,w)=>{const dep=Math.min(Math.max(0,heights[i]-p.y-bite),budget*w,Math.max(0,heights[i]+2.8),(capacity-soil)/(step*step));if(dep>0){change(i,heights[i]-dep);soil+=dep*step*step}});
+  const budget=cutTravel/samples*.85*Math.min(1,(penetration-bite)/(.12*s.scale));
+  brush(p.x,p.z,radius,(i,w)=>{const dep=Math.min(Math.max(0,heights[i]-p.y-bite),budget*w,Math.max(0,heights[i]+2.8),(capacity-soil)/(step*step));if(dep>0){change(i,heights[i]-dep);const volume=dep*step*step;soil+=volume*.84;displaced+=volume*.16}});
   }
- spawnIntake(soil-before,bw,s.scale,capacity,tipY,tipZ);
+ if(displaced>0){const horizontal=Math.hypot(mouth.x,mouth.z);const offset=radius*.95;let xx=tooth.x+(horizontal>.05?mouth.x/horizontal:0)*offset,zz=tooth.z+(horizontal>.05?mouth.z/horizontal:1)*offset;if(!deposit(xx,zz,displaced,Math.max(step*1.25,radius*.8)))soil+=displaced;}spawnIntake(soil-before,bw,s.scale,capacity,tipY,tipZ);
 }
 }
 previousTip=tooth.clone();
 const transit=animateSoil(dt),bw=([.77,1.30,.38,0,0,.82][s.att]||.77),angle=s.b+s.a+s.k;
 updateFill(bucket?Math.min(1,Math.max(0,soil-transit)/capacity):0,bw,Math.cos(angle),Math.sin(angle),performance.now());
-refreshTerrain();
-let info=bucket?'土量 '+Math.round(soil*1000)/1000+' / '+Math.round(capacity*1000)/1000+' m³':'掘削用バケットに交換';if(info!==lastSoilInfo){lastSoilInfo=info;document.getElementById('soilInfo').textContent=info}
+relaxSoil(dt);refreshTerrain();
+let info=bucket?'土量 '+Math.round(soil*1000)/1000+' / '+Math.round(capacity*1000)/1000+' m³':'掘削用バケットに交換';if(s.contact)info+=' / 接地・負荷';if(info!==lastSoilInfo){lastSoilInfo=info;document.getElementById('soilInfo').textContent=info}
 }
 let width=0,height=0;
 
@@ -174,5 +214,5 @@ function draw(s){const w=canvas.clientWidth,h=canvas.clientHeight;if(w!==width||
 base.updateMatrixWorld(true);soilStep(s);const local=(p,g=upper)=>g.localToWorld(p);if(inside){camera.position.copy(local(v(-.60,2.35,.29)));camera.lookAt(local(v(-.13,1.60,6)))}else{camera.position.copy(local(v(-6.5,4.1,6.8),base));camera.lookAt(local(v(s.active?0:2.9,1.35,.95),base))}camera.updateMatrixWorld();sun.position.set(-s.x-18,28,s.z+12);sun.target.position.set(-s.x,0,s.z);
 const status=s.engine+'/'+s.unlocked;if(status!==lastDisplay){lastDisplay=status;dc.fillStyle='#14201c';dc.fillRect(0,0,256,192);dc.fillStyle=s.engine?'#a0e6a4':'#8a9993';dc.font='bold 23px monospace';dc.fillText(s.engine?'ENGINE ON':'STANDBY',15,40);dc.font='19px monospace';dc.fillText(s.unlocked?'HYD READY':'LOCKED',15,79);dc.fillStyle='#64746a';dc.fillRect(15,112,226,18);dc.fillStyle='#d3ba65';dc.fillRect(15,112,s.engine?155:10,18);dc.font='15px monospace';dc.fillText('FUEL    TEMP',15,155);displayTex.needsUpdate=true}
 renderer.render(scene,camera)}
-return {draw,resetTerrain};
+return {draw,resetTerrain,resolveMotion};
 }

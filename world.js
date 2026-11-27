@@ -77,6 +77,24 @@ function linkGeometry(s,k=s.k){
  return {P,Q,C,L1,L2,d,valid:d<=L1+L2+1e-9&&d>=Math.abs(L1-L2)-1e-9};
 }
 
+
+const COURSES=[
+ {name:'01 基本レバー操作',kind:'axes',seconds:90,goal:'始動・ロック解除後、４機能を両方向に操作'},
+ {name:'02 バケット位置合わせ',kind:'targets',seconds:120,goal:'黄色い目標に刃先を順番に合わせる'},
+ {name:'03 掘削・旋回・排土',kind:'delivery',seconds:180,goal:'前方の土を掘り、黄色枠へ排土'},
+ {name:'04 水平鋤取り',kind:'grade',seconds:240,goal:'黄色枠内の盛土を緑の基準高さまで均す'},
+ {name:'05 溝掘削',kind:'grade',seconds:300,goal:'黄色枠内を指定深さに掘る'},
+ {name:'06 法面整形',kind:'grade',seconds:300,goal:'黄色枠内を緑の基準勾配に仕上げる'},
+ {name:'07 ダンプ積込み',kind:'truck',seconds:240,goal:'掘削した土をダンプの荷台へ積み込む'},
+ {name:'08 狭所作業',kind:'delivery',seconds:240,goal:'障害物を避けて掘削し、黄色枠へ排土'}
+];
+const courseUnit=v=>Math.max(0,Math.min(1,v));
+function assessCourse(m,limit,exam){
+ const progress=courseUnit(m.progress),accuracy=courseUnit(m.accuracy??1),time=courseUnit(1-Math.max(0,m.elapsed-limit*.55)/(limit*.45));
+ const score=Math.max(0,Math.min(100,Math.round(70*progress+15*progress*accuracy+15*progress*time-8*(m.hits||0)-Math.min(15,15*(m.overcut||0)))));
+ return {progress,accuracy,elapsed:m.elapsed,hits:m.hits||0,score,pass:progress>=.999&&score>=70,timeout:exam&&m.elapsed>=limit};
+}
+
 function createWorld(canvas){
 const T=THREE, scene=new T.Scene(), renderer=new T.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance',preserveDrawingBuffer:new URLSearchParams(location.search).get('verify')==='1'}), camera=new T.PerspectiveCamera(58,1,.04,450);
 renderer.setPixelRatio(Math.min(devicePixelRatio,1.6));renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.12;
@@ -461,8 +479,96 @@ function updateFill(f,bw,ny,nz,now){carried.visible=f>.002;if(!carried.visible)r
 function deposit(xx,zz,amount,radius){let cells=[],total=0;brush(xx,zz,radius,(i,w)=>{cells.push([i,w]);total+=w});if(total<=0)return false;for(const [i,w] of cells)change(i,heights[i]+amount*w/total/(step*step));return true}
 function launchDrops(amount,bw,s,cap){if(amount<=0||drops.length>=96)return 0;let n=Math.min(96-drops.length,Math.max(1,Math.min(12,Math.ceil(amount/(cap*.006)))));for(let i=0;i<n;i++){let start=tool.localToWorld(v((rnd()-.5)*bw*.76,fillSpec?fillSpec.lip[1]:.10,fillSpec?fillSpec.lip[0]:.74));let end=tool.localToWorld(v(0,fillSpec?fillSpec.lip[1]+fillSpec.normalY*.5:-.32,fillSpec?fillSpec.lip[0]+fillSpec.normalZ*.5:.95)),origin=tool.localToWorld(v(0,0,0));let vel=end.sub(origin).normalize().multiplyScalar(.18+rnd()*.45);vel.y-=.15;drops.push({p:start,vel,amount:amount/n,r:Math.max(.012,Math.cbrt(amount/n)*.48),life:0,spread:Math.max(step*1.15,bw*s.scale*.18)})}return amount}
 function animateSoil(dt){intake.count=0;incoming.length=0;
-for(let i=drops.length-1;i>=0;i--){let p=drops[i];p.life+=dt;p.vel.y-=9.81*dt;p.p.addScaledVector(p.vel,dt);if(p.p.y<=heightAt(p.p.x,p.p.z)+p.r*.4||p.life>4){if(!deposit(p.p.x,p.p.z,p.amount,p.spread))deposit(Math.max(-half+.5,Math.min(half-.5,p.p.x)),Math.max(-half+.5,Math.min(half-.5,p.p.z)),p.amount,p.spread);drops.splice(i,1)}}falling.count=drops.length;drops.forEach((p,i)=>{clodDummy.position.copy(p.p);clodDummy.scale.set(p.r,p.r*.85,p.r*.9);clodDummy.rotation.set(p.life*5,i,p.life*3);clodDummy.updateMatrix();falling.setMatrixAt(i,clodDummy.matrix)});falling.instanceMatrix.needsUpdate=true;}
-function resetTerrain(){heights.set(initial);for(let i=0;i<pos.count;i++){pos.setY(i,heights[i]);paintVertex(i)}pos.needsUpdate=true;geo.attributes.color.needsUpdate=true;geo.computeVertexNormals();soil=0;pendingCut=0;workMode='';excavationLoad=0;previousTip=null;previousK=null;previousA=null;dumping=false;spillDelay=0;carried.visible=false;incoming.length=drops.length=0;intake.count=falling.count=0;dirty=false;unstable.clear();lastSoilInfo='';lastFill=-1;lastFillTime=-1}
+for(let i=drops.length-1;i>=0;i--){let p=drops[i],previousY=p.p.y;p.life+=dt;p.vel.y-=9.81*dt;p.p.addScaledVector(p.vel,dt);if(courseLanding(p,previousY)){drops.splice(i,1);continue}if(p.p.y<=heightAt(p.p.x,p.p.z)+p.r*.4||p.life>4){courseGroundLanding(p);if(!deposit(p.p.x,p.p.z,p.amount,p.spread))deposit(Math.max(-half+.5,Math.min(half-.5,p.p.x)),Math.max(-half+.5,Math.min(half-.5,p.p.z)),p.amount,p.spread);drops.splice(i,1)}}falling.count=drops.length;drops.forEach((p,i)=>{clodDummy.position.copy(p.p);clodDummy.scale.set(p.r,p.r*.85,p.r*.9);clodDummy.rotation.set(p.life*5,i,p.life*3);clodDummy.updateMatrix();falling.setMatrixAt(i,clodDummy.matrix)});falling.instanceMatrix.needsUpdate=true;}
+
+const courseObjects=group(scene);let course=null,courseBlocked=false;
+const markYellow=mat(0xf0bd31,.7),markGreen=mat(0x6dd9a0,.7),barrierMat=mat(0xe7a13b,.85);
+function clearCourse(){disposeChildren(courseObjects);course=null;courseBlocked=false}
+function markerLine(a,b,material=markYellow){const o=segment(courseObjects,material,.025);place(o,v(...a),v(...b));return o}
+function outlineZone(r,y,material=markYellow){const a=[r.x0,y,r.z0],b=[r.x1,y,r.z0],c=[r.x1,y,r.z1],d=[r.x0,y,r.z1];for(const [x,z] of [[a,b],[b,c],[c,d],[d,a]])markerLine(x,z,material)}
+function insideZone(r,x,z){return !!r&&x>=r.x0&&x<=r.x1&&z>=r.z0&&z<=r.z1}
+function startCourse(index,s,exam=false){
+ clearCourse();const def=COURSES[index],spec=bucketSpec(s);if(!def||!spec)return null;
+ const p=machineProfile(s),bw=spec.W*s.scale,reach=p.boom+p.arm,cap=Math.max(.01,p.capacity*([1,1.15,.55,0,0,.8,0,0][s.att]||1)),baseY=heightAt(0,0);
+ const c=course={index,def,exam,elapsed:0,hits:0,lastHit:-10,dug:0,delivered:0,spill:0,goal:cap*.35,progress:0,accuracy:1,overcut:0,axes:new Array(8).fill(0),targetIndex:0,targets:[],hold:0,obstacles:[],cells:[],guard:[],startError:0,meanError:0,grade:null,zone:null,truck:null,pile:null,clock:0,finished:false,last:null};
+ if(def.kind==='targets'){
+  for(const q of [{b:.78,a:-1.30,k:-.55,swing:0},{b:.93,a:-1.15,k:-.65,swing:.38},{b:.65,a:-1.65,k:-.7,swing:-.40}]){
+   const t=toolPoint({...s,...q,x:0,z:0,yaw:0},0,spec.tip[0],spec.tip[1]);t.mesh=mesh(courseObjects,new T.SphereGeometry(Math.max(.12,bw*.17),16,12),markYellow,t.x,t.y,t.z,false);c.targets.push(t);markerLine([t.x,heightAt(t.x,t.z)+.04,t.z],[t.x,t.y,t.z]);
+  }
+ }else if(def.kind==='grade'){
+  const cx=-p.width*.17,cz=reach*.57+p.front,ww=Math.max(step*2,bw*.86),len=Math.max(step*3,reach*.26),r={x0:cx-ww/2,x1:cx+ww/2,z0:cz-len/2,z1:cz+len/2};c.grade=r;
+  const depth=Math.max(.15,Math.min(.36,p.bucket*.36)),raise=Math.max(.09,Math.min(.18,p.bucket*.17));
+  const goalAt=z=>index===3?baseY:index===4?baseY-depth:baseY-.06-(z-r.z0)*.5;
+  for(let i=0;i<heights.length;i++){const x=pos.getX(i),z=pos.getZ(i);if(insideZone(r,x,z)){
+    const target=goalAt(z);change(i,index===3?baseY+raise:baseY+.02);c.cells.push({i,target});c.startError+=Math.abs(heights[i]-target);
+   }else if(x>=r.x0-bw*.5&&x<=r.x1+bw*.5&&z>=r.z0-step&&z<=r.z1+step)c.guard.push({i,y:heights[i]});
+  }
+  c.tolerance=index===3?.045:index===4?.065:.075;outlineZone(r,baseY+raise+.06);
+  for(const x of [r.x0,r.x1]){markerLine([x,goalAt(r.z0),r.z0],[x,goalAt(r.z1),r.z1],markGreen);for(const z of [r.z0,r.z1])markerLine([x,goalAt(z),z],[x,baseY+raise+.25,z])}
+ }else if(def.kind==='delivery'||def.kind==='truck'){
+  const t=toolPoint({...s,b:1.05,a:-1.25,k:-.70,swing:1.02,x:0,z:0,yaw:0},0,spec.tip[0],spec.tip[1]);
+  const w=Math.max(bw*1.9,.8),l=Math.max(bw*2.5,1.0);c.zone={x0:t.x-w/2,x1:t.x+w/2,z0:t.z-l/2,z1:t.z+l/2};const y=heightAt(t.x,t.z);
+  if(def.kind==='truck'){
+   const cy=Math.max(y+.35,Math.min(t.y-.35,Math.max(.55,p.height*.45)));c.truck={...c.zone,y:cy};
+   const steelBed=mat(0x485259,.55,.4),truckPaint=mat(0xe6e5db,.5);
+   box(courseObjects,steelBed,t.x,cy-.12,t.z,w,.24,l);
+   for(const sign of [-1,1])box(courseObjects,steelBed,t.x+sign*w*.49,cy+.18,t.z,.08,.36,l);
+   for(const sign of [-1,1])box(courseObjects,steelBed,t.x,cy+.18,t.z+sign*l*.49,w,.36,.08);
+   box(courseObjects,truckPaint,t.x,cy+.10,t.z+l*.77,w,.83,l*.48);box(courseObjects,mat(0x344c5a,.25),t.x,cy+.32,t.z+l*1.01,w*.78,.34,.025);
+   for(const sign of [-1,1])for(const zz of [-l*.35,l*.32,l*.83])cyl(courseObjects,rubber,t.x+sign*w*.48,y+.26,t.z+zz,Math.min(.30,w*.28),.15,'x');
+   c.pile=mesh(courseObjects,new T.IcosahedronGeometry(1,2),earth,t.x,cy+.04,t.z,false);c.pile.visible=false;outlineZone(c.zone,cy+.38);
+   c.obstacles.push({x0:c.zone.x0-.06,x1:c.zone.x1+.06,z0:c.zone.z1,z1:c.zone.z1+l*.52,y0:y,y1:cy+.60});
+   for(const xx of [c.zone.x0,c.zone.x1])c.obstacles.push({x0:xx-.045,x1:xx+.045,z0:c.zone.z0,z1:c.zone.z1,y0:cy-.12,y1:cy+.36});
+   for(const zz of [c.zone.z0,c.zone.z1])c.obstacles.push({x0:c.zone.x0,x1:c.zone.x1,z0:zz-.045,z1:zz+.045,y0:cy-.12,y1:cy+.36});
+   c.obstacles.push({x0:c.zone.x0,x1:c.zone.x1,z0:c.zone.z0,z1:c.zone.z1,y0:y,y1:cy});
+  }else outlineZone(c.zone,y+.065);
+  if(index===7){for(const [bx,bz] of [[-reach*.40,reach*.68],[reach*.25,reach*.52]]){const hh=Math.max(.55,p.height*.50),ww=Math.max(.35,bw*.45),gy=heightAt(bx,bz);c.obstacles.push({x0:bx-ww/2,x1:bx+ww/2,z0:bz-ww/2,z1:bz+ww/2,y0:gy,y1:gy+hh});box(courseObjects,barrierMat,bx,gy+hh*.5,bz,ww,hh,ww)}}
+  outlineZone({x0:-p.width*.17-bw*.65,x1:-p.width*.17+bw*.65,z0:reach*.40,z1:reach*.82},baseY+.05,markGreen);
+ }
+ refreshTerrain();return courseStatus(s);
+}
+function courseCollision(s){
+ if(!course||!course.obstacles.length||course.finished)return false;
+ const {p}=rig(s),spec=bucketSpec(s),points=spec?samplesFor(s).map(q=>toolPoint(s,q[0],q[1],q[2])):[toolPoint(s,0,0,1)];
+ const ang=s.yaw+s.swing,cs=Math.cos(ang),sn=Math.sin(ang),by=heightAt(-s.x,s.z);
+ function bodyPoint(x,y,z){return {x:-s.x-x*cs-z*sn,y:by+y,z:s.z-x*sn+z*cs}}
+ for(let j=0;j<=10;j++){const f=j/10,bl=p.boom*f,al=p.arm*f;points.push(bodyPoint(p.width*.17,p.pivot+bl*Math.sin(s.b),p.front+bl*Math.cos(s.b)));points.push(bodyPoint(p.width*.17,p.pivot+p.boom*Math.sin(s.b)+al*Math.sin(s.b+s.a),p.front+p.boom*Math.cos(s.b)+al*Math.cos(s.b+s.a)))}
+ for(const r of course.obstacles){if(points.some(q=>q.x>=r.x0-.03&&q.x<=r.x1+.03&&q.z>=r.z0-.03&&q.z<=r.z1+.03&&q.y>=r.y0&&q.y<=r.y1+.03))return true;
+  const dx=Math.max(r.x0+s.x,0,-s.x-r.x1),dz=Math.max(r.z0-s.z,0,s.z-r.z1);if(r.y0<=by+p.deck&&dx<p.width*.46&&dz<p.track*.46)return true;
+ }return false;
+}
+function courseLanding(drop,previousY){
+ const c=course;if(!c||c.finished||!c.truck)return false;
+ if(previousY>=c.truck.y&&drop.p.y<=c.truck.y&&insideZone(c.truck,drop.p.x,drop.p.z)){
+  c.delivered+=drop.amount;if(c.pile){const r=c.truck;c.pile.visible=true;c.pile.scale.set((r.x1-r.x0)*.43,Math.max(.035,Math.min(.38,c.delivered/Math.max(.1,(r.x1-r.x0)*(r.z1-r.z0)))*2.5),(r.z1-r.z0)*.40);c.pile.position.y=r.y+c.pile.scale.y*.40}return true;
+ }return false;
+}
+function courseGroundLanding(drop){if(!course||course.finished||!course.zone)return;if(!course.truck&&insideZone(course.zone,drop.p.x,drop.p.z))course.delivered+=drop.amount;else course.spill+=drop.amount}
+function courseStatus(s){
+ if(!course)return null;const c=course;let detail='';
+ if(c.def.kind==='axes'){const values=c.axes.map(v=>courseUnit(v/.24));c.progress=values.reduce((a,b)=>a+b,0)/8;c.accuracy=1;const names=['ブーム上','ブーム下','アーム伸','アーム引','バケット開','バケット掘','左旋回','右旋回'];detail=names.filter((n,i)=>values[i]<1).join('・')||'全操作完了'}
+ else if(c.def.kind==='targets'){c.progress=c.targetIndex/c.targets.length;detail='目標 '+Math.min(c.targetIndex+1,c.targets.length)+' / '+c.targets.length}
+ else if(c.def.kind==='grade'&&c.cells.length){let error=0,good=0,over=0;for(const q of c.cells){const e=heights[q.i]-q.target;error+=Math.abs(e);if(Math.abs(e)<=c.tolerance)good++;over+=Math.max(0,-e-c.tolerance)}
+  const coverage=good/c.cells.length,mean=error/c.cells.length;c.meanError=mean;c.accuracy=courseUnit(1-mean/.25);c.progress=coverage>=.85&&mean<=c.tolerance?1:Math.min(.98,courseUnit(1-error/Math.max(c.startError,1e-6))*.65+coverage*.35);if(c.progress<1e-5)c.progress=0;
+  let damage=0;for(const q of c.guard)damage+=Math.max(0,q.y-heights[q.i]-.08);c.overcut=courseUnit((over+damage)/Math.max(.05,c.startError));
+  detail='仕上り '+Math.round(coverage*100)+'% / 平均誤差 '+Math.round(mean*100)+'cm'+(c.index===4?' / 深さ '+Math.round((heightAt(0,0)-c.cells[0].target)*100)+'cm':c.index===5?' / 勾配 1:2':'');
+ }else if(c.def.kind==='delivery'||c.def.kind==='truck'){c.progress=courseUnit(Math.min(c.delivered,c.dug)/c.goal);c.accuracy=c.delivered+c.spill>0?c.delivered/(c.delivered+c.spill):1;detail='排土 '+c.delivered.toFixed(2)+' / '+c.goal.toFixed(2)+'m³'}
+ return {...assessCourse(c,c.def.seconds,c.exam),name:c.def.name,goalText:c.def.goal,detail,limit:c.def.seconds,courseIndex:c.index,exam:c.exam,complete:c.progress>=.999};
+}
+function courseTick(prev,s,dt){
+ if(!course||course.finished)return null;const c=course;
+ // Exam time starts at the first unlock and cannot be paused with the safety lock.
+ if(s.engine&&s.unlocked)c.started=true;if(c.started)c.elapsed+=Math.max(0,dt);
+ if(s.engine&&s.unlocked){
+  if(c.def.kind==='axes')for(const [i,key] of ['b','a','k','swing'].entries()){const d=s[key]-prev[key];c.axes[i*2+(d<0?1:0)]+=Math.abs(d)}
+  if(c.def.kind==='targets'&&c.targetIndex<c.targets.length){const target=c.targets[c.targetIndex],spec=bucketSpec(s),tip=toolPoint(s,0,spec.tip[0],spec.tip[1]),error=Math.hypot(tip.x-target.x,tip.y-target.y,tip.z-target.z);if(error<Math.max(.14,machineProfile(s).bucket*.24)){c.hold+=dt;if(c.hold>=.40){target.mesh.material=markGreen;c.targetIndex++;c.hold=0}}else c.hold=0}
+  if(courseBlocked&&c.elapsed-c.lastHit>.8){c.hits++;c.lastHit=c.elapsed}
+ }
+ courseBlocked=false;c.clock+=dt;if(c.clock<.20)return c.last;c.clock=0;c.last=courseStatus(s);return c.last;
+}
+function finishCourse(s){const result=courseStatus(s);if(course)course.finished=true;return result}
+
+function resetTerrain(){clearCourse();heights.set(initial);for(let i=0;i<pos.count;i++){pos.setY(i,heights[i]);paintVertex(i)}pos.needsUpdate=true;geo.attributes.color.needsUpdate=true;geo.computeVertexNormals();soil=0;pendingCut=0;workMode='';excavationLoad=0;previousTip=null;previousK=null;previousA=null;dumping=false;spillDelay=0;carried.visible=false;incoming.length=drops.length=0;intake.count=falling.count=0;dirty=false;unstable.clear();lastSoilInfo='';lastFill=-1;lastFillTime=-1}
 // Isolate arm/bucket cutting travel from boom, swing and track motion.
 function scoopTravel(b,a,k,oldA,oldK,tipY,tipZ){
  if(oldA===null||oldK===null||!(a<oldA-1e-8||k<oldK-1e-8))return 0;
@@ -577,7 +683,7 @@ function preCut(prev,next){
  return shallow?'鋤取り':'掘削';
 }
 function resolveMotion(prev,next){
- if(!next.active||!next.engine||!next.unlocked)return next;
+ courseBlocked=false;if(!next.active||!next.engine||!next.unlocked)return next;
  const keys=['x','z','yaw','swing','b','a','k'];
  if(keys.every(k=>Math.abs(next[k]-prev[k])<1e-9))return next;
  const before=soil,pendingBefore=pendingCut;
@@ -601,11 +707,14 @@ function resolveMotion(prev,next){
   const tx=terrainTransaction;terrainTransaction=null;
   for(const [i,y] of tx)change(i,y);soil=before;pendingCut=pendingBefore;
  }
+ const previousObstacle=courseCollision(prev);
+ if(courseCollision(next)&&!previousObstacle)courseBlocked=true;
  function attempt(q,commit){
+  if(!previousObstacle&&courseCollision(q))return false;
   terrainTransaction=new Map();const mode=preCut(prev,q),cutting=mode==='掘削'||mode==='鋤取り';
   const limit=Math.max(collisionDepth(prev,cutting),permitted)+.00008;
   const ok=collisionDepth(q,cutting)<=limit;
-  if(ok&&commit){terrainTransaction=null;workMode=mode;return true}
+  if(ok&&commit){terrainTransaction=null;workMode=mode;if(course&&!course.finished&&soil>before)course.dug+=soil-before;return true}
   rollback();return ok;
  }
  if(attempt(next,true))return next;
@@ -719,5 +828,5 @@ function inspect(s){
  const gl=renderer.getContext(),errors=[];for(let i=0;i<16;i++){const code=gl.getError();if(code===gl.NO_ERROR)break;errors.push(code)}
  let screenOverflow=0;if(!s.cab){for(const x of [exteriorBounds.min.x,exteriorBounds.max.x])for(const y of [exteriorBounds.min.y,exteriorBounds.max.y])for(const z of [exteriorBounds.min.z,exteriorBounds.max.z]){const q=v(x,y,z).project(camera);screenOverflow=Math.max(screenOverflow,Math.abs(q.x)-1,Math.abs(q.y)-1)}}return {ground:groundType(s).name,diggingForce:DIG_FORCE[MACHINE_PROFILES.indexOf(machineProfile(s))],load:excavationLoad,lip:visual.toArray(),contact:contactProfile(s),angles:[s.b,s.a,s.k,s.swing],screenOverflow,model:machineProfile(s).id,attachment:s.att,view:s.cab?'cab':'outside',meshCount:meshes,vertexCount:vertices,invalidBounds:invalid,tipErrorM:gap,bounds:{min:bounds.min.toArray(),max:bounds.max.toArray()},camera:camera.position.toArray(),cameraDirection:camera.getWorldDirection(v(0,0,0)).toArray(),soil,terrainMin:Math.min(...heights),linkValid:linkGeometry(s).valid,webglErrors:errors,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles};
 }
-return {draw,resetTerrain,resolveMotion,inspect,photoAssetsReady};
+return {draw,resetTerrain,resolveMotion,inspect,photoAssetsReady,startCourse,courseTick,courseStatus,finishCourse,clearCourse};
 }

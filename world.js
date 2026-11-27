@@ -1,4 +1,17 @@
 
+// Reference machine dimensions in metres. Unpublished joint positions and track lengths are approximations.
+const MACHINE_PROFILES=[
+ {id:'SK10SR',nominal:.03,capacity:.028,width:1.00,height:2.25,shoe:.18,track:1.38,boom:1.48,arm:.85,bucket:.40,tail:.50,deck:.54,pivot:.72,front:.32,mini:true,open:true,cabW:.60,cabD:.81},
+ {id:'SK35SR',nominal:.10,capacity:.10,width:1.70,height:2.51,shoe:.30,track:2.14,boom:2.35,arm:1.32,bucket:.60,tail:.85,deck:.83,pivot:1.12,front:.42,mini:true,open:false,cabW:.76,cabD:1.04},
+ {id:'SK55SR',nominal:.15,capacity:.15,width:1.96,height:2.53,shoe:.40,track:2.48,boom:2.99,arm:1.69,bucket:.65,tail:1.17,deck:.91,pivot:1.24,front:.48,mini:true,open:false,cabW:.85,cabD:1.18},
+ {id:'SK75SR',nominal:.25,capacity:.28,width:2.30,height:2.53,shoe:.45,track:2.85,boom:3.30,arm:1.71,bucket:.75,tail:1.29,deck:1.02,pivot:1.42,front:.55,mini:false,open:false,cabW:.93,cabD:1.36},
+ {id:'SK125SR',nominal:.45,capacity:.45,width:2.49,height:2.81,shoe:.50,track:3.53,boom:4.60,arm:2.38,bucket:.85,tail:1.49,deck:1.14,pivot:1.62,front:.67,mini:false,open:false,cabW:.98,cabD:1.42},
+ {id:'SK200',nominal:.70,capacity:.80,width:2.80,height:3.01,shoe:.60,track:4.17,boom:5.65,arm:2.94,bucket:1.08,tail:2.75,deck:1.35,pivot:1.85,front:.76,mini:false,open:false,cabW:1.00,cabD:1.48},
+ {id:'SK330',nominal:1.20,capacity:1.40,width:3.19,height:3.30,shoe:.60,track:4.95,boom:6.50,arm:3.30,bucket:1.40,tail:3.25,deck:1.49,pivot:2.05,front:.84,mini:false,open:false,cabW:1.05,cabD:1.55}
+];
+function machineProfile(s){return MACHINE_PROFILES.find(p=>Math.abs(p.nominal-Number(s.capacity))<.0001)||MACHINE_PROFILES[3]}
+function rig(s){const p=machineProfile(s),sc=s.scale||1;return {p,sc,B:p.boom/sc,A:p.arm/sc,Y:p.pivot/sc,Z:p.front/sc,X:(p.width*.17)/sc}}
+
 function createWorld(canvas){
 const T=THREE, scene=new T.Scene(), renderer=new T.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'}), camera=new T.PerspectiveCamera(58,1,.04,450);
 renderer.setPixelRatio(Math.min(devicePixelRatio,1.6));renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.03;
@@ -47,36 +60,36 @@ for(let i=0;i<64;i++){const angle=rnd()*6.28,rad=28+rnd()*48,xx=Math.sin(angle)*
 for(let i=0;i<8;i++){let xx=15+rnd()*14,zz=-12+rnd()*30;let pile=mesh(scene,new T.IcosahedronGeometry(1,2),earth,xx,-.24,zz);pile.scale.set(2+rnd()*2,1+rnd()*1.2,2+rnd()*2)}
 for(let i=0;i<26;i++){let xx=-14,zz=-23+i*1.8;box(scene,steel,xx,.65,zz,.08,1.3,.08);if(i<25){box(scene,edge,xx,.96,zz+.9,.055,.10,1.8);box(scene,edge,xx,.48,zz+.9,.055,.10,1.8)}}
 const orange=mat(0xe86b22,.65),white=mat(0xe5e1d6,.7);for(let i=0;i<6;i++){const cone=group(scene,-5+i*2,0,12);box(cone,rubber,0,.035,0,.42,.07,.42);cyl(cone,orange,0,.25,0,.035,.43,'y',.16);cyl(cone,white,0,.29,0,.075,.09,'y',.10)}
-const base=group(scene),upper=group(base),cab=group(upper,-.59,1.58,.08);
-box(base,steel,0,.46,0,1.25,.39,2.3);cyl(base,steel,0,.83,0,.70,.20);
-for(const side of [-1,1]){const tg=group(base,side*.83,0,0);extrude(tg,track,[[-1.48,.31],[-1.25,.09],[1.25,.09],[1.48,.31],[1.48,.49],[1.25,.70],[-1.25,.70],[-1.48,.49]],.54,0,0,0,.025);for(let j=0;j<6;j++){cyl(tg,shoe,0,.28,-1.12+j*.45,.22,.48,'x');cyl(tg,steel,side*.265,.28,-1.12+j*.45,.095,.035,'x')}for(let j=0;j<16;j++){const zz=-1.27+j*.17;box(tg,shoe,0,.73,zz,.63,.065,.145);box(tg,shoe,0,.065,zz,.63,.065,.145)}for(const end of [-1,1])for(let j=0;j<6;j++){let t=-Math.PI/2+j*Math.PI/5;const o=box(tg,shoe,0,.40+Math.sin(t)*.34,end*(1.24+Math.cos(t)*.26),.63,.065,.16);o.rotation.x=end*(Math.PI/2-t)}}
-extrude(upper,paint,[[-1.43,1.02],[-1.55,1.23],[-1.55,1.59],[-1.46,1.72],[-1.31,1.80],[-.55,1.82],[-.50,1.05]],1.92,0,0,0,.065);
-extrude(upper,paint,[[-.61,1.04],[-.61,1.72],[.34,1.72],[.60,1.51],[.63,1.04]],.83,.53,0,0,.045);
-box(upper,steel,-.60,1.13,.02,.76,.22,1.18);for(let i=0;i<3;i++)box(upper,shoe,-1.00,1.05+i*.12,.48-i*.20,.24,.05,.22);
-for(let i=0;i<3;i++)box(upper,rubber,.98,1.63,-.75+i*.22,.018,.022,.15);
-const panelLine=mat(0x164b4b,.8);box(upper,panelLine,.976,1.44,-.49,.013,.45,.018);box(upper,panelLine,.976,1.18,-.75,.013,.015,.53);
-for(const xx of [-.69,.69]){box(upper,steel,xx,1.43,-1.55,.21,.13,.035);box(upper,mat(0xb64423,.35),xx,1.43,-1.574,.15,.08,.015)}
+const base=group(scene),upper=group(base),cab=group(upper,-.59,1.58,.08),undercarriage=group(base),housing=group(upper),trackGroups=[];
+box(undercarriage,steel,0,.46,0,1.25,.39,2.3);cyl(undercarriage,steel,0,.83,0,.70,.20);
+for(const side of [-1,1]){const tg=group(base,side*.83,0,0);trackGroups.push(tg);extrude(tg,track,[[-1.48,.31],[-1.25,.09],[1.25,.09],[1.48,.31],[1.48,.49],[1.25,.70],[-1.25,.70],[-1.48,.49]],.54,0,0,0,.025);for(let j=0;j<6;j++){cyl(tg,shoe,0,.28,-1.12+j*.45,.22,.48,'x');cyl(tg,steel,side*.265,.28,-1.12+j*.45,.095,.035,'x')}for(let j=0;j<16;j++){const zz=-1.27+j*.17;box(tg,shoe,0,.73,zz,.63,.065,.145);box(tg,shoe,0,.065,zz,.63,.065,.145)}for(const end of [-1,1])for(let j=0;j<6;j++){let t=-Math.PI/2+j*Math.PI/5;const o=box(tg,shoe,0,.40+Math.sin(t)*.34,end*(1.24+Math.cos(t)*.26),.63,.065,.16);o.rotation.x=end*(Math.PI/2-t)}}
+extrude(housing,paint,[[-1.43,1.02],[-1.55,1.23],[-1.55,1.59],[-1.46,1.72],[-1.31,1.80],[-.55,1.82],[-.50,1.05]],1.92,0,0,0,.065);
+extrude(housing,paint,[[-.61,1.04],[-.61,1.72],[.34,1.72],[.60,1.51],[.63,1.04]],.83,.53,0,0,.045);
+box(housing,steel,-.60,1.13,.02,.76,.22,1.18);for(let i=0;i<3;i++)box(housing,shoe,-1.00,1.05+i*.12,.48-i*.20,.24,.05,.22);
+for(let i=0;i<3;i++)box(housing,rubber,.98,1.63,-.75+i*.22,.018,.022,.15);
+const panelLine=mat(0x164b4b,.8);box(housing,panelLine,.976,1.44,-.49,.013,.45,.018);box(housing,panelLine,.976,1.18,-.75,.013,.015,.53);
+for(const xx of [-.69,.69]){box(housing,steel,xx,1.43,-1.55,.21,.13,.035);box(housing,mat(0xb64423,.35),xx,1.43,-1.574,.15,.08,.015)}
 
-box(upper,steel,0,1.01,-.35,1.98,.12,2.1);box(upper,paint,.61,1.91,-.60,.67,.22,1.30);box(upper,steel,.62,2.04,-.67,.58,.025,.62);for(let i=0;i<9;i++)box(upper,rubber,.965,1.43,-1.14+i*.10,.022,.20,.035);box(upper,steel,.97,1.23,-.24,.025,.09,.35);cyl(upper,steel,.68,2.12,-1.15,.055,.28);box(upper,edge,.37,1.47,.52,.55,.70,.64);
-box(cab,inner,0,.03,0,.91,.12,1.36);box(cab,steel,0,1.16,-.02,.98,.11,1.42);box(cab,steel,0,1.09,.02,.92,.045,1.32);
-for(const xx of [-.43,.43])for(const zz of [-.61,.61])box(cab,steel,xx,.60,zz,.075,1.1,.075);
-for(const xx of [-.43,.43]){box(cab,steel,xx,.14,0,.065,.09,1.25);box(cab,steel,xx,1.06,0,.065,.06,1.25);box(cab,glass,xx,.60,0,.012,.91,1.16)}
-box(cab,glass,0,.60,.61,.82,.91,.012);box(cab,glass,0,.60,-.61,.82,.91,.012);box(cab,steel,0,.22,.61,.84,.06,.065);box(cab,rubber,-.43,.60,.36,.022,.91,.032);box(cab,steel,-.44,.54,.05,.035,.04,.17);// Park the front wiper against the outside lower window edge.
-const wiperPivot=cyl(cab,steel,-.31,.27,.64,.018,.018,'z');
-const wiper=segment(cab,rubber,.005);place(wiper,v(-.31,.27,.646),v(.03,.30,.646));
-const blade=segment(cab,rubber,.007);place(blade,v(-.12,.305,.65),v(.33,.345,.65));for(let i=0;i<5;i++)box(cab,rubber,0,.087,.10+i*.065,.42,.012,.021);
+box(housing,steel,0,1.01,-.35,1.98,.12,2.1);box(housing,paint,.61,1.91,-.60,.67,.22,1.30);box(housing,steel,.62,2.04,-.67,.58,.025,.62);for(let i=0;i<9;i++)box(housing,rubber,.965,1.43,-1.14+i*.10,.022,.20,.035);box(housing,steel,.97,1.23,-.24,.025,.09,.35);cyl(housing,steel,.68,2.12,-1.15,.055,.28);box(housing,edge,.37,1.47,.52,.55,.70,.64);
+const miniBody=group(upper),bladeGroup=group(base),canopy=group(cab),cabShell=group(cab);extrude(miniBody,paint,[[-.80,.03],[-.88,.18],[-.82,.48],[-.65,.58],[-.19,.58],[-.12,.10]],.82,0,0,0,.05);box(miniBody,edge,.28,.31,.08,.36,.52,.55);box(miniBody,steel,0,.04,.04,.82,.10,1.35);for(let i=0;i<6;i++)box(miniBody,rubber,.425,.31,-.65+i*.07,.012,.14,.027);box(bladeGroup,paint,0,.22,0,1,.40,.13);box(bladeGroup,steel,0,.037,.07,1,.075,.10);for(const xx of [-.25,.25])box(bladeGroup,steel,xx,.19,-.25,.09,.12,.50);box(cab,inner,0,.03,0,.91,.12,1.36);box(cab,steel,0,1.16,-.02,.98,.11,1.42);box(cab,steel,0,1.09,.02,.92,.045,1.32);
+for(const xx of [-.43,.43])for(const zz of [-.61,.61])box(cabShell,steel,xx,.60,zz,.075,1.1,.075);
+for(const xx of [-.43,.43]){box(cabShell,steel,xx,.14,0,.065,.09,1.25);box(cabShell,steel,xx,1.06,0,.065,.06,1.25);box(cabShell,glass,xx,.60,0,.012,.91,1.16)}
+box(cabShell,glass,0,.60,.61,.82,.91,.012);box(cabShell,glass,0,.60,-.61,.82,.91,.012);box(cabShell,steel,0,.22,.61,.84,.06,.065);box(cabShell,rubber,-.43,.60,.36,.022,.91,.032);box(cabShell,steel,-.44,.54,.05,.035,.04,.17);// Park the front wiper against the outside lower window edge.
+const wiperPivot=cyl(cabShell,steel,-.31,.27,.64,.018,.018,'z');
+const wiper=segment(cabShell,rubber,.005);place(wiper,v(-.31,.27,.646),v(.03,.30,.646));
+const blade=segment(cabShell,rubber,.007);place(blade,v(-.12,.305,.65),v(.33,.345,.65));for(const xx of [-.43,.43])for(const zz of [-.56,.56])box(canopy,steel,xx,.59,zz,.052,1.09,.052);for(let i=0;i<5;i++)box(cab,rubber,0,.087,.10+i*.065,.42,.012,.021);
 box(cab,seatMat,-.04,.23,-.13,.51,.18,.54);const back=box(cab,seatMat,-.04,.54,-.39,.49,.56,.13);back.rotation.x=-.10;box(cab,seatMat,-.04,.84,-.43,.31,.18,.13);
 for(const xx of [-.30,.29]){box(cab,inner,xx,.30,.03,.16,.34,.53);box(cab,seatMat,xx,.50,-.09,.16,.08,.36);cyl(cab,rubber,xx,.57,.20,.045,.16);box(cab,rubber,xx,.67,.20,.10,.12,.085)}
 for(const xx of [-.09,.10]){box(cab,steel,xx,.09,.45,.12,.055,.24);cyl(cab,steel,xx,.24,.49,.018,.28);box(cab,rubber,xx,.39,.49,.075,.09,.055)}
 const monitor=group(cab,.32,.64,.48);monitor.rotation.y=-.35;box(monitor,steel,0,0,0,.25,.20,.06);const displayCanvas=document.createElement('canvas');displayCanvas.width=256;displayCanvas.height=192;const dc=displayCanvas.getContext('2d'),displayTex=new T.CanvasTexture(displayCanvas);displayTex.colorSpace=T.SRGBColorSpace;const monitorFace=box(monitor,new T.MeshBasicMaterial({map:displayTex}),0,0,-.034,.22,.16,.006);let lastDisplay='';
 const mirrorArm=segment(cab,steel,.018);place(mirrorArm,v(.43,.92,.52),v(.65,.96,.66));box(cab,steel,.65,.96,.66,.15,.20,.045);box(cab,chrome,.65,.96,.63,.12,.17,.015);
-const boom=group(upper,.38,1.45,.55),arm=group(boom,0,0,2.25),tool=group(arm,0,0,1.65);
-extrude(boom,paint,[[0,-.16],[.53,-.11],[1.30,.10],[2.25,-.11],[2.25,.14],[1.28,.36],[.50,.24],[0,.17]],.30,0,0,0,.035);
-extrude(arm,paint,[[0,-.15],[1.55,-.11],[1.65,-.06],[1.65,.10],[.15,.22],[0,.15]],.23,0,0,0,.023);
+const boom=group(upper,.38,1.45,.55),arm=group(boom,0,0,2.25),tool=group(arm,0,0,1.65),boomVisual=group(boom),armVisual=group(arm);
+extrude(boomVisual,paint,[[0,-.16],[.53,-.11],[1.30,.10],[2.25,-.11],[2.25,.14],[1.28,.36],[.50,.24],[0,.17]],.30,0,0,0,.035);
+extrude(armVisual,paint,[[0,-.15],[1.55,-.11],[1.65,-.06],[1.65,.10],[.15,.22],[0,.15]],.23,0,0,0,.023);
 for(const g of [boom,arm,tool]){cyl(g,steel,0,0,0,.14,.40,'x');for(const side of [-1,1])cyl(g,chrome,side*.215,0,0,.075,.025,'x')}
 function cylinder(parent,r){return [segment(parent,steel,r),segment(parent,chrome,r*.52)]}const lift=cylinder(upper,.085),stickCylinder=cylinder(boom,.065),bucketCylinder=cylinder(arm,.05);
 function adjust(pair,a,b,f=.58){const mid=a.clone().lerp(b,f);place(pair[0],a,mid);place(pair[1],mid,b)}
-const hoses=[];for(let i=0;i<3;i++){const pts=[v(-.12+i*.065,.17,.05),v(-.12+i*.065,.36,.45),v(-.12+i*.065,.42,1.1),v(-.12+i*.065,.25,1.75),v(-.12+i*.065,.16,2.20)];const curve=new T.CatmullRomCurve3(pts);hoses.push(mesh(boom,new T.TubeGeometry(curve,20,.019,6,false),rubber))}
+const hoses=[];for(let i=0;i<3;i++){const pts=[v(-.12+i*.065,.17,.05),v(-.12+i*.065,.36,.45),v(-.12+i*.065,.42,1.1),v(-.12+i*.065,.25,1.75),v(-.12+i*.065,.16,2.20)];const curve=new T.CatmullRomCurve3(pts);hoses.push(mesh(boomVisual,new T.TubeGeometry(curve,20,.019,6,false),rubber))}
 const tools=[];const worn=mat(0x777774,.54,.69),bucketSteel=mat(0x555653,.74,.56);
 function curvedPlate(p,points,w,m){const curve=new T.CatmullRomCurve3(points.map(([z,y])=>v(0,y,z)),false,'centripetal');let verts=[],ix=[],normals;const count=22;for(let j=0;j<=count;j++){let q=curve.getPoint(j/count);verts.push(-w/2,q.y,q.z,w/2,q.y,q.z)}for(let j=0;j<count;j++){let i=j*2;ix.push(i,i+1,i+2,i+1,i+3,i+2)}const geom=new T.BufferGeometry();geom.setAttribute('position',new T.Float32BufferAttribute(verts,3));geom.setIndex(ix);geom.computeVertexNormals();let mm=m.clone();mm.side=T.DoubleSide;return mesh(p,geom,mm)}
 function bucket(w,teeth,skeleton=false){
@@ -174,21 +187,21 @@ const toolSamples=Array.from({length:8},(_,att)=>{
  return points;
 });
 function collisionDepth(s,cutting){
- const angle=s.b+s.a+s.k,armAngle=s.b+s.a,t=s.yaw+s.swing,cs=Math.cos(t),sn=Math.sin(t),baseY=heightAt(-s.x,s.z),sc=s.scale;
- const hy=1.45+2.25*Math.sin(s.b)+1.65*Math.sin(armAngle),hz=.55+2.25*Math.cos(s.b)+1.65*Math.cos(armAngle);
+ const {B,A,X,Y,Z}=rig(s);const angle=s.b+s.a+s.k,armAngle=s.b+s.a,t=s.yaw+s.swing,cs=Math.cos(t),sn=Math.sin(t),baseY=heightAt(-s.x,s.z),sc=s.scale;
+ const hy=Y+B*Math.sin(s.b)+A*Math.sin(armAngle),hz=Z+B*Math.cos(s.b)+A*Math.cos(armAngle);
  let worst=0;
  function sample(xx,yy,zz,allow){
-  const lx=.38+xx,wx=-s.x-sc*(lx*cs+zz*sn),wz=s.z+sc*(-lx*sn+zz*cs),wy=baseY+sc*yy;
+  const lx=X+xx,wx=-s.x-sc*(lx*cs+zz*sn),wz=s.z+sc*(-lx*sn+zz*cs),wy=baseY+sc*yy;
   worst=Math.max(worst,heightAt(wx,wz)-wy-allow*sc);
  }
  for(const [xx,yy,zz,lip] of toolSamples[s.att]||[]){sample(xx,hy+yy*Math.cos(angle)+zz*Math.sin(angle),hz-yy*Math.sin(angle)+zz*Math.cos(angle),lip?(cutting?.12:.035):.018)}
- for(const d of [.3,.7,1.15,1.58]){sample(0,1.45+2.25*Math.sin(s.b)+d*Math.sin(armAngle)-.12,.55+2.25*Math.cos(s.b)+d*Math.cos(armAngle),.015)}
+ for(const frac of [.18,.42,.70,.96]){const d=A*frac;sample(0,Y+B*Math.sin(s.b)+d*Math.sin(armAngle)-.12,Z+B*Math.cos(s.b)+d*Math.cos(armAngle),.015)}
  return worst;
 }
 
 function toolPoint(s,xx,yy,zz){
- const angle=s.b+s.a+s.k,armAngle=s.b+s.a,t=s.yaw+s.swing,cs=Math.cos(t),sn=Math.sin(t),sc=s.scale;
- const lx=.38+xx,ly=1.45+2.25*Math.sin(s.b)+1.65*Math.sin(armAngle)+yy*Math.cos(angle)+zz*Math.sin(angle),lz=.55+2.25*Math.cos(s.b)+1.65*Math.cos(armAngle)-yy*Math.sin(angle)+zz*Math.cos(angle);
+ const {B,A,X,Y,Z}=rig(s);const angle=s.b+s.a+s.k,armAngle=s.b+s.a,t=s.yaw+s.swing,cs=Math.cos(t),sn=Math.sin(t),sc=s.scale;
+ const lx=X+xx,ly=Y+B*Math.sin(s.b)+A*Math.sin(armAngle)+yy*Math.cos(angle)+zz*Math.sin(angle),lz=Z+B*Math.cos(s.b)+A*Math.cos(armAngle)-yy*Math.sin(angle)+zz*Math.cos(angle);
  return {x:-s.x-sc*(lx*cs+lz*sn),y:heightAt(-s.x,s.z)+sc*ly,z:s.z+sc*(-lx*sn+lz*cs)};
 }
 
@@ -259,7 +272,7 @@ function preCut(prev,next){
   removed+=editStrip(pt.lip,pt.axis,width,pt.lip.y-.008*q.scale,Math.max(.002*q.scale,travel*.95/count),travel/count);
  }
  if(removed<=0)return '';
- const cap=Math.max(.01,(next.capacity||.25)*([1,1.15,.55,0,0,.8,0,0][next.att]||1));
+ const cap=Math.max(.01,machineProfile(next).capacity*([1,1.15,.55,0,0,.8,0,0][next.att]||1));
  const collected=Math.min(Math.max(0,cap-soil),removed*.88);
  soil+=collected;pendingCut+=collected;redistribute(p.lip,p.axis,width,removed-collected,dx,dz);
  return shallow?'鋤取り':'掘削';
@@ -309,7 +322,7 @@ function retainedFraction(ny,nz){
  return Math.max(0,Math.min(1,area(clipFill(cavity,ey,ez,level))/area(cavity)));
 }
 function soilStep(s){
-const dt=Math.max(0,Math.min(.075,s.dt||0));const bucket=[0,1,2,5].includes(s.att),capacity=Math.max(.01,(s.capacity||.25)*([1,1.15,.55,0,0,.8,0,0][s.att]||1));
+const dt=Math.max(0,Math.min(.075,s.dt||0));const bucket=[0,1,2,5].includes(s.att),capacity=Math.max(.01,machineProfile(s).capacity*([1,1.15,.55,0,0,.8,0,0][s.att]||1));
 const tipY=s.att===1?.18:.26,tipZ=s.att===1?.79:.97;
 const tooth=tool.localToWorld(v(0,tipY,tipZ));
 const dk=previousK===null?0:s.k-previousK;
@@ -336,10 +349,23 @@ updateFill(bucket?Math.min(1,Math.max(0,soil-transit)/capacity):0,bw,Math.cos(an
 relaxSoil(dt);refreshTerrain();
 let info=bucket?'土量 '+Math.round(soil*1000)/1000+' / '+Math.round(capacity*1000)/1000+' m³':'掘削用バケットに交換';if(workMode)info+=' / '+workMode;if(s.contact)info+=' / 接地・負荷';if(info!==lastSoilInfo){lastSoilInfo=info;document.getElementById('soilInfo').textContent=info}
 }
-let width=0,height=0;
+let width=0,height=0,profileKey='';
 
-function draw(s){const w=canvas.clientWidth,h=canvas.clientHeight;if(w!==width||h!==height){width=w;height=h;renderer.setSize(w,h,false);camera.aspect=w/Math.max(1,h);camera.fov=2*Math.atan(Math.max(Math.tan(29*Math.PI/180),Math.tan(27*Math.PI/180)/camera.aspect))*180/Math.PI;camera.fov=Math.min(108,camera.fov);camera.updateProjectionMatrix()}base.position.set(-s.x,heightAt(-s.x,s.z),s.z);base.rotation.y=-s.yaw;base.scale.set(-s.scale,s.scale,s.scale);upper.rotation.y=s.swing;boom.rotation.x=-s.b;arm.rotation.x=-s.a;tool.rotation.x=-s.k;tools.forEach((o,i)=>o.visible=i===s.att);for(const m of mechanisms){for(const q of m.joints)q.j.rotation.x=q.sign*q.open*(1-s.aux);for(const c of m.cylinders)updateJawCylinder(c)}chisel.position.z=.96;adjust(lift,v(.38,1.13,.76),v(.38,1.45+Math.sin(s.b)*1.25, .55+Math.cos(s.b)*1.25));adjust(stickCylinder,v(0,.23,.62),v(0,Math.sin(s.a)*.48,2.25+Math.cos(s.a)*.48));adjust(bucketCylinder,v(0,.15,.57),v(0,Math.sin(s.k)*.23,1.65+Math.cos(s.k)*.23));const inside=s.cab&&s.active;
-base.updateMatrixWorld(true);soilStep(s);const local=(p,g=upper)=>g.localToWorld(p);if(inside){camera.position.copy(local(v(-.63,2.37,.12)));camera.lookAt(local(v(-.63,1.56,7.2)))}else{camera.position.copy(local(v(-6.5,4.1,6.8),base));camera.lookAt(local(v(s.active?0:2.9,1.35,.95),base))}camera.updateMatrixWorld();sun.position.set(-s.x-18,28,s.z+12);sun.target.position.set(-s.x,0,s.z);
+function draw(s){const w=canvas.clientWidth,h=canvas.clientHeight;if(w!==width||h!==height){width=w;height=h;renderer.setSize(w,h,false);camera.aspect=w/Math.max(1,h);camera.fov=2*Math.atan(Math.max(Math.tan(29*Math.PI/180),Math.tan(27*Math.PI/180)/camera.aspect))*180/Math.PI;camera.fov=Math.min(108,camera.fov);camera.updateProjectionMatrix()}const {p,sc,B,A,X,Y,Z}=rig(s);
+if(profileKey!==p.id){profileKey=p.id;
+ const deck=p.deck/sc,roof=p.height/sc,bodyW=p.width/sc;
+ undercarriage.scale.set(bodyW/2.29,deck/1.02,p.track/sc/3.0);
+ for(let i=0;i<trackGroups.length;i++){const tg=trackGroups[i];tg.position.x=(i?1:-1)*(p.width-p.shoe)/2/sc;tg.scale.set(p.shoe/sc/.63,deck/1.02,p.track/sc/3.0)}
+ housing.visible=!p.open;miniBody.visible=p.open;housing.scale.set(bodyW/2.1,deck/1.02,Math.max(.6,p.tail/sc/1.55));miniBody.position.y=deck;miniBody.scale.set(bodyW/.95,.60/sc,p.tail/sc/.88);
+ bladeGroup.visible=p.mini;bladeGroup.position.set(0,0,p.track/sc*.57);bladeGroup.scale.set(bodyW,.35/sc,1/sc);
+ const cabFloor=p.open?p.deck:p.deck+.28;
+ cab.position.set(p.open?-.08/sc:-(p.width*.25)/sc,cabFloor/sc,.08/sc);
+ cab.scale.set(p.cabW/sc/.91,(p.height-cabFloor)/sc/1.22,p.cabD/sc/1.36);
+ cabShell.visible=!p.open;canopy.visible=p.open;
+ boom.position.set(X,Y,Z);arm.position.z=B;tool.position.z=A;boomVisual.scale.z=B/2.25;armVisual.scale.z=A/1.65;
+}
+base.position.set(-s.x,heightAt(-s.x,s.z),s.z);base.rotation.y=-s.yaw;base.scale.set(-s.scale,s.scale,s.scale);upper.rotation.y=s.swing;boom.rotation.x=-s.b;arm.rotation.x=-s.a;tool.rotation.x=-s.k;tools.forEach((o,i)=>o.visible=i===s.att);for(const m of mechanisms){for(const q of m.joints)q.j.rotation.x=q.sign*q.open*(1-s.aux);for(const c of m.cylinders)updateJawCylinder(c)}chisel.position.z=.96;adjust(lift,v(X,Y-.32,Z+.21),v(X,Y+Math.sin(s.b)*B*.56,Z+Math.cos(s.b)*B*.56));adjust(stickCylinder,v(0,.23,B*.28),v(0,Math.sin(s.a)*A*.29,B+Math.cos(s.a)*A*.29));adjust(bucketCylinder,v(0,.15,A*.35),v(0,Math.sin(s.k)*.23,A+Math.cos(s.k)*.23));const inside=s.cab&&s.active;
+base.updateMatrixWorld(true);soilStep(s);const local=(p,g=upper)=>g.localToWorld(p);if(inside){camera.position.copy(local(v(-.04,.79,.04),cab));camera.lookAt(camera.position.clone().add(local(v(0,-.10,1),upper).sub(local(v(0,0,0),upper)).multiplyScalar(7)))}else{const distance=Math.max(6.8,p.boom+p.arm+1.5)/sc;camera.position.copy(local(v(-distance*.85,distance*.58,distance*.94),base));camera.lookAt(local(v(s.active?0:2.1/sc,p.height*.48/sc,p.boom*.35/sc),base))}camera.updateMatrixWorld();sun.position.set(-s.x-18,28,s.z+12);sun.target.position.set(-s.x,0,s.z);
 const status=s.engine+'/'+s.unlocked;if(status!==lastDisplay){lastDisplay=status;dc.fillStyle='#14201c';dc.fillRect(0,0,256,192);dc.fillStyle=s.engine?'#a0e6a4':'#8a9993';dc.font='bold 23px monospace';dc.fillText(s.engine?'ENGINE ON':'STANDBY',15,40);dc.font='19px monospace';dc.fillText(s.unlocked?'HYD READY':'LOCKED',15,79);dc.fillStyle='#64746a';dc.fillRect(15,112,226,18);dc.fillStyle='#d3ba65';dc.fillRect(15,112,s.engine?155:10,18);dc.font='15px monospace';dc.fillText('FUEL    TEMP',15,155);displayTex.needsUpdate=true}
 renderer.render(scene,camera)}
 return {draw,resetTerrain,resolveMotion};

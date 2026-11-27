@@ -62,8 +62,8 @@ function bucketSpec(s,att=s.att){
 function linkGeometry(s,k=s.k){
  const q=bucketSpec(s),{A}=rig(s);
  const pinY=q?(q.pin2Y??-q.H*.085):-.05,pinZ=q?(q.pin2Z??q.D*.23):.18,r=Math.hypot(pinY,pinZ);
- const P={y:r*.45,z:A-r*1.0},Q={y:pinY*Math.cos(k)+pinZ*Math.sin(k),z:A-pinY*Math.sin(k)+pinZ*Math.cos(k)};
- const d=Math.hypot(Q.y-P.y,Q.z-P.z),L1=r*1.25,L2=r*1.22;
+ const P={y:0,z:A*2.470/2.9},Q={y:pinY*Math.cos(k)+pinZ*Math.sin(k),z:A-pinY*Math.sin(k)+pinZ*Math.cos(k)};
+ const d=Math.hypot(Q.y-P.y,Q.z-P.z),L1=(r+A*.43/2.9)*.56,L2=(r+A*.43/2.9)*.56;
  const along=(L1*L1-L2*L2+d*d)/(2*d),perp=Math.sqrt(Math.max(0,L1*L1-along*along));
  const uy=(Q.y-P.y)/d,uz=(Q.z-P.z)/d;
  const C={y:P.y+uy*along-uz*perp,z:P.z+uz*along+uy*perp};
@@ -292,6 +292,9 @@ function placeRam(r,a,b,fixed){
  r.ports[0].position.copy(a).addScaledVector(axis,bar*.17);r.ports[1].position.copy(a).addScaledVector(axis,bar*.88);
 }
 const lift=realisticRam(upper,.087),stickCylinder=realisticRam(boom,.067),bucketCylinder=realisticRam(arm,.052);
+const boomRodPin=group(boom),singleBasePin=group(upper);
+const boomRodAxle=cyl(boomRodPin,steel,0,0,0,.05,.56,'x'),singleBaseAxle=cyl(singleBasePin,steel,0,0,0,.05,.32,'x');
+for(const x of [-.14,.14])cyl(singleBasePin,paint,x,0,0,.085,.055,'x');
 const liftTwin=realisticRam(upper,.087);
 const rockerBars=[],dogBars=[],linkPins=[];
 for(const side of [-1,1]){rockerBars.push(segment(arm,paint,.034));dogBars.push(segment(arm,steel,.029))}
@@ -299,10 +302,11 @@ for(let i=0;i<3;i++){const p=group(arm);cyl(p,steel,0,0,0,.059,.36,'x');for(cons
 function rotateYZ(y,z,angle){return [y*Math.cos(angle)+z*Math.sin(angle),-y*Math.sin(angle)+z*Math.cos(angle)]}
 function ramEnds(s,b=s.b,a=s.a,k=s.k){
  const {B,A,X,Y,Z}=rig(s);
- const [by,bz]=rotateYZ(-.15,B*.49,b),link=linkGeometry(s,k);
+ const {p,sc}=rig(s),bs=B/cadBoomLen,rodPin=mapBoom(1.396,0,2.174),[by,bz]=rotateYZ(rodPin[1]*bs,rodPin[2]*bs,b),link=linkGeometry(s,k);
+ const deck=p.deck/sc,front=Math.max(p.cabD*.55+.08,p.track*.40)/sc,baseY=deck+.205*(Y-deck)/.83,baseZ=Z+(.875-.18)*(front-Z)/1.14;
  const [ay,az]=rotateYZ(.06458*A/2.9,-.70467*A/2.9,a);
  const stickAnchor=mapBoom(1.59038,0,2.91902),bScale=B/cadBoomLen;
- return {liftA:[X,Y-.47,Z+.13],liftB:[X,Y+by,Z+bz],stickA:[0,stickAnchor[1]*bScale,stickAnchor[2]*bScale],stickB:[0,ay,B+az],bucketA:[0,.55771*A/2.9,.26341*A/2.9],bucketB:[0,link.C.y,link.C.z],link};
+ return {liftA:[X,baseY,baseZ],liftB:[X,Y+by,Z+bz],stickA:[0,stickAnchor[1]*bScale,stickAnchor[2]*bScale],stickB:[0,ay,B+az],bucketA:[0,.55771*A/2.9,.26341*A/2.9],bucketB:[0,link.C.y,link.C.z],link};
 }
 const ramLengths=new Map();
 function minRamLengths(s){
@@ -314,8 +318,9 @@ function minRamLengths(s){
 }
 function updateRams(s){
  const {p,X}=rig(s),e=ramEnds(s),lengths=minRamLengths(s),{P,Q,C}=e.link;
- const twin=p.nominal>=.45,spacing=.13;liftTwin.body.parent.visible=twin;
- const la=v(...e.liftA),lb=v(...e.liftB);if(twin){la.x=X-spacing;lb.x=X-spacing;placeRam(liftTwin,v(X+spacing,la.y,la.z),v(X+spacing,lb.y,lb.z),lengths[0])}
+ const twin=p.nominal>=.45,sc=s.scale||1,bodyW=p.width/sc,spacing=.30*bodyW/2.8,boomSpacing=.24*bodyW/2.8;liftTwin.body.parent.visible=twin;
+ const la=v(...e.liftA),lb=v(...e.liftB);if(twin){la.x=X-spacing;lb.x=X-boomSpacing;placeRam(liftTwin,v(X+spacing,la.y,la.z),v(X+boomSpacing,lb.y,lb.z),lengths[0])}
+ const rodPin=mapBoom(1.396,0,2.174),bs=rig(s).B/cadBoomLen;boomRodPin.position.set(0,rodPin[1]*bs,rodPin[2]*bs);boomRodPin.scale.set(bodyW/2.8,bs,bs);singleBasePin.visible=!twin;singleBasePin.position.set(...e.liftA);
  placeRam(lift,la,lb,lengths[0]);placeRam(stickCylinder,v(...e.stickA),v(...e.stickB),lengths[1]);placeRam(bucketCylinder,v(...e.bucketA),v(...e.bucketB),lengths[2]);
  const q=bucketSpec(s),offset=q?Math.max(.065,q.cad?q.pinHalf:q.gap*.5+q.thick*1.3):.15;
  for(let i=0;i<2;i++){const x=(i?1:-1)*offset;place(rockerBars[i],v(x,P.y,P.z),v(x,C.y,C.z));place(dogBars[i],v(x,C.y,C.z),v(x,Q.y,Q.z))}
@@ -481,7 +486,7 @@ function collisionDepth(s,cutting){
   const lx=X+xx,wx=-s.x-sc*(lx*cs+zz*sn),wz=s.z+sc*(-lx*sn+zz*cs),wy=baseY+sc*yy;
   worst=Math.max(worst,heightAt(wx,wz)-wy-allow*sc);
  }
- for(const [xx,yy,zz,lip] of samplesFor(s)){sample(xx,hy+yy*Math.cos(angle)+zz*Math.sin(angle),hz-yy*Math.sin(angle)+zz*Math.cos(angle),lip?(cutting?.12:.035):.018)}
+ for(const [xx,yy,zz,lip] of samplesFor(s)){sample(xx,hy+yy*Math.cos(angle)+zz*Math.sin(angle),hz-yy*Math.sin(angle)+zz*Math.cos(angle),lip?(cutting?.16:.035):.018)}
  for(const frac of [.18,.42,.70,.96]){const d=A*frac;sample(0,Y+B*Math.sin(s.b)+d*Math.sin(armAngle)-.12,Z+B*Math.cos(s.b)+d*Math.cos(armAngle),.015)}
  return worst;
 }
@@ -521,49 +526,45 @@ function editStrip(p,axis,width,floor,limit,depth){
  return volume;
 }
 function preCut(prev,next){
- const old=contactProfile(prev),p=contactProfile(next);if(!p)return '';
- const dx=p.lip.x-old.lip.x,dz=p.lip.z-old.lip.z,dy=p.lip.y-old.lip.y;
- const horiz=Math.hypot(dx,dz),travel=Math.hypot(horiz,dy),width=p.bw*next.scale;
- const actuated=Math.abs(next.a-prev.a)+Math.abs(next.k-prev.k)>1e-8;
- const closing=next.k<prev.k-1e-8,pulling=next.a<prev.a-1e-8;
- const angle=next.b+next.a+next.k;
- const mouthZ=-p.ny*Math.sin(angle)+p.nz*Math.cos(angle),t=next.yaw+next.swing;
- const leading=(-Math.sin(t)*dx+Math.cos(t)*dz)*mouthZ;
- // A low back is a solid contact, not a cutting edge. Shallow horizontal
- // sliding on the belly may shave humps; it can never collect soil.
- const backFirst=p.backGap<=p.edgeGap+.015*next.scale&&p.backGap<.035*next.scale;
- const movingAgainstMouth=horiz>1e-7&&leading< -horiz*.15;
- const grading=backFirst||(p.backDown&&p.backGap<.06*next.scale&&p.edgeGap>p.backGap-.055*next.scale)||(movingAgainstMouth&&p.backGap<.07*next.scale);
- if(grading){
+ const old=contactProfile(prev),p=contactProfile(next);if(!p||!old)return '';
+ const dx=p.lip.x-old.lip.x,dz=p.lip.z-old.lip.z,dy=p.lip.y-old.lip.y,horiz=Math.hypot(dx,dz),travel=Math.hypot(horiz,dy),width=p.bw*next.scale;
+ const actuated=Math.abs(next.a-prev.a)+Math.abs(next.k-prev.k)>1e-8,closing=next.k<prev.k-1e-8,pulling=next.a<prev.a-1e-8;
+ if(!actuated||travel<1e-8)return '';
+ const angle=next.b+next.a+next.k,t=next.yaw+next.swing,sc=next.scale;
+ const forward=-Math.sin(t)*dx+Math.cos(t)*dz;
+ const mouthZ=-p.ny*Math.sin(angle)+p.nz*Math.cos(angle),mouthY=p.ny*Math.cos(angle)+p.nz*Math.sin(angle);
+ const into=forward*mouthZ+dy*mouthY;
+ const shallow=horiz>1e-7&&Math.abs(dy)<horiz*.70;
+ const lipFirst=p.edgeGap<p.backGap-.008*sc;
+ const shallowCut=shallow&&pulling&&forward<0&&mouthZ<-.10&&lipFirst&&p.edgeGap<.012*sc&&p.edgeGap>-.20*sc;
+ const deepCut=(closing||pulling)&&into>travel*.065&&p.edgeGap<.012*sc&&lipFirst;
+ const heel=p.backGap<.045*sc&&(p.backGap<=p.edgeGap+.008*sc||(!shallowCut&&!deepCut&&p.backDown));
+ if(heel&&!shallowCut&&!deepCut){
   const gx=p.back.x-old.back.x,gz=p.back.z-old.back.z,gy=p.back.y-old.back.y,slide=Math.hypot(gx,gz);
-  if(p.backGap>-.16*next.scale&&slide>1e-6&&Math.abs(gy)<slide*1.1&&actuated){
-   // Sweep the actual heel footprint. The center cannot jump between the left and right edges.
+  if(slide>1e-7&&Math.abs(gy)<slide*1.1&&p.backGap>-.16*sc){
    const mid={x:(p.back.x+old.back.x)*.5,z:(p.back.z+old.back.z)*.5,y:(p.back.y+old.back.y)*.5};
-   const removed=editStrip(mid,p.axis,width,mid.y,Math.min(.06*next.scale,slide*1.6),slide+step*.55);
-   redistribute(mid,p.axis,width,removed,gx,gz);
-   return removed>0?'整地':'背面接地';
-  }
-  return '背面接地';
+   const removed=editStrip(mid,p.axis,width,mid.y,Math.min(.07*sc,slide*2.0),slide+step*.55);
+   redistribute(mid,p.axis,width,removed,gx,gz);return removed>0?'整地':'背面接地';
+  }return '背面接地';
  }
- if(backFirst||p.edgeGap>.025*next.scale||travel<1e-7||!actuated)return '';
- // Use the actual lip only; a closed bucket back or side cannot excavate.
- const mouthY=p.ny*Math.cos(angle)+p.nz*Math.sin(angle);const intoMouth=leading+dy*mouthY;
- const cut=(closing||pulling)&&intoMouth>travel*.08&&!movingAgainstMouth;
- if(!cut)return '';
- const shallow=Math.abs(dy)<horiz*.65&&p.edgeGap>-.12*next.scale;
- let removed=0,swept=0,count=Math.min(6,Math.max(1,Math.ceil(travel/(step*.4))));
+ if(!shallowCut&&!deepCut)return '';
+ let removed=0,physical=0,count=Math.min(8,Math.max(1,Math.ceil(travel/(step*.25))));
  for(let j=1;j<=count;j++){
   const q={...next};for(const key of ['x','z','yaw','swing','b','a','k'])q[key]=prev[key]+(next[key]-prev[key])*j/count;
-  const pt=contactProfile(q);if((pt.backGap<=pt.edgeGap+.015*q.scale&&pt.backGap<.035*q.scale)||(pt.backDown&&pt.backGap<.06*q.scale&&pt.edgeGap>pt.backGap-.055*q.scale)||pt.edgeGap>.025*q.scale)continue;
-  let penetration=0;for(let n=0;n<7;n++){const off=(n/6-.5)*width;penetration+=Math.max(0,heightAt(pt.lip.x+pt.axis.x*off,pt.lip.z+pt.axis.z*off)-pt.lip.y)}
-  penetration/=7;if(penetration<.001*q.scale)continue;
-  swept+=width*Math.max(0,intoMouth/count)*Math.min(penetration,.35*q.scale);
-  removed+=editStrip(pt.lip,pt.axis,width,pt.lip.y,travel*.95/count,travel/count);
+  const c=contactProfile(q);if(c.edgeGap>=-.0005*sc||c.edgeGap>=c.backGap-.006*sc)continue;
+  let penetration=0;for(let n=0;n<9;n++){const off=(n/8-.5)*width;penetration+=Math.max(0,heightAt(c.lip.x+c.axis.x*off,c.lip.z+c.axis.z*off)-c.lip.y)}penetration/=9;
+  if(penetration<.0005*sc)continue;
+  // The edge cuts only the strip it sweeps; soil volume is conserved.
+  const advance=(shallowCut?Math.abs(forward):Math.max(0,into))/count;
+  const volume=width*advance*Math.min(penetration,.40*sc);
+  physical+=volume;
+  removed+=editStrip(c.lip,c.axis,width,c.lip.y,Math.max(.001*sc,travel*1.8/count),travel/count+step*.30);
  }
  if(removed<=0)return '';
  const cap=Math.max(.01,machineProfile(next).capacity*([1,1.15,.55,0,0,.8,0,0][next.att]||1));
- const collected=Math.min(Math.max(0,cap-soil),removed,swept);
- soil+=collected;pendingCut+=collected;redistribute(p.lip,p.axis,width,removed-collected,dx,dz);
+ const collected=Math.min(Math.max(0,cap-soil),removed,physical*1.35);
+ soil+=collected;pendingCut+=collected;
+ redistribute(p.lip,p.axis,width,removed-collected,dx,dz);
  return shallow?'鋤取り':'掘削';
 }
 function resolveMotion(prev,next){

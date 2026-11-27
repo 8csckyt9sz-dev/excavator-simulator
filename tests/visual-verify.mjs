@@ -15,7 +15,7 @@ try{
  await page.route('**/three@0.160.1/build/three.min.js',route=>route.fulfill({path:path.join(root,'node_modules/three/build/three.min.js'),contentType:'application/javascript'}));
  await page.goto('http://127.0.0.1:'+server.address().port+'/?verify=1');await page.waitForFunction(()=>window.earthVerify!==undefined,undefined,{timeout:20000});
  if(!await page.evaluate(()=>earthVerify.ready))throw Error('WebGL initialization failed');
- for(let m=0;m<7;m++)for(let a=0;a<8;a++){const d=await page.evaluate(o=>earthVerify.show(o),{machine:m,attachment:a});check(d);if(m===3||a===0)await shot('outside-'+m+'-'+a)}
+ for(let m=0;m<7;m++)for(let a=0;a<8;a++){const d=await page.evaluate(o=>earthVerify.show(o),{machine:m,attachment:a});check(d);if(m===3||a===0)await shot('outside-'+m+'-'+a);if(a===7)console.log('verified machine '+m)}
  for(let m=0;m<7;m++){check(await page.evaluate(o=>earthVerify.show(o),{machine:m,attachment:0,cab:true}));await shot('cab-'+m)}
  for(let a of [0,1,2,5]){const start=await page.evaluate(a=>earthVerify.show({machine:3,attachment:a,cab:true}),a);let touch=await page.evaluate(()=>earthVerify.step({b:-.375},150));if(touch.soil>1e-8)throw Error('soil intake from lowering only');let dig=await page.evaluate(()=>earthVerify.step({a:-.44,k:-.75,b:-.094},110));let stop=await page.evaluate(()=>earthVerify.step({},60));report.checks.push({attachment:a,touch:touch.soil,dug:dig.soil,stationary:stop.soil-dig.soil});if(stop.soil>dig.soil+1e-8)throw Error('soil gained while stationary');await shot('dig-'+a)}
  // Actual mobile-portrait layout, as well as landscape.

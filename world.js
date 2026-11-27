@@ -85,7 +85,7 @@ function extrude(p,m,points,width,x=0,y=0,z=0,bevel=.035){const sh=new T.Shape()
 const cadCache=new Map();
 function cadFile(name){
  if(cadCache.has(name))return cadCache.get(name);
- const raw=atob(EARTH_CAD[name]),bytes=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);
+ const raw=atob(EARTH_CAD[name]||EARTH_CAD_DETAIL[name]),bytes=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);
  const view=new DataView(bytes.buffer),len=view.getUint32(12,true),json=JSON.parse(new TextDecoder().decode(bytes.subarray(20,20+len))),binary=28+len;
  if(view.getUint32(0,true)!==0x46546c67||view.getUint32(24+len,true)!==0x004e4942)throw Error('Invalid CAD GLB '+name);
  function access(i){const a=json.accessors[i],b=json.bufferViews[a.bufferView],n={SCALAR:1,VEC2:2,VEC3:3,VEC4:4}[a.type],size={5121:1,5123:2,5125:4,5126:4}[a.componentType],offset=binary+(b.byteOffset||0)+(a.byteOffset||0),stride=b.byteStride||n*size,arr=a.componentType===5126?new Float32Array(a.count*n):new Uint32Array(a.count*n);
@@ -167,6 +167,66 @@ for(const xx of [-.30,.29]){box(cab,inner,xx,.30,.03,.16,.34,.53);box(cab,seatMa
 for(const xx of [-.09,.10]){box(cab,steel,xx,.09,.45,.12,.055,.24);cyl(cab,steel,xx,.24,.49,.018,.28);box(cab,rubber,xx,.39,.49,.075,.09,.055)}
 const monitor=group(cab,.32,.64,.48);monitor.rotation.y=-.35;box(monitor,steel,0,0,0,.25,.20,.06);const displayCanvas=document.createElement('canvas');displayCanvas.width=256;displayCanvas.height=192;const dc=displayCanvas.getContext('2d'),displayTex=new T.CanvasTexture(displayCanvas);displayTex.colorSpace=T.SRGBColorSpace;const monitorFace=box(monitor,new T.MeshBasicMaterial({map:displayTex}),0,0,-.034,.22,.16,.006);let lastDisplay='';
 const mirrorArm=segment(cab,steel,.018);place(mirrorArm,v(.43,.92,.52),v(.65,.96,.66));box(cab,steel,.65,.96,.66,.15,.20,.045);box(cab,chrome,.65,.96,.63,.12,.17,.015);
+
+// Independent cab and upper-frame assemblies imported from the original CAD.
+const cabCad=group(cab),bodyCad=group(upper),trackCad=group(base);
+const srcRoot=new T.Matrix4().makeRotationFromQuaternion(new T.Quaternion(-Math.SQRT1_2,0,0,Math.SQRT1_2));
+const cadCabConvert=(x,y,z)=>[(z+.90)*.91,(y-.20)*1.22/1.81,(x-.235)*1.36/2.17];
+const cabFrameMat=mat(0x232a2b,.48,.22),cabPlastic=mat(0x353a3c,.82),cabSeat=mat(0x303235,.94);
+const materialCab=n=>n.name?.startsWith('Window')?glass:n.mesh===8?chrome:n.mesh<=1?cabFrameMat:n.mesh===11||n.mesh===12?cabSeat:cabPlastic;
+cadHierarchy(cabCad,'upper_structure',39,cadCabConvert,materialCab,true,srcRoot);
+const legacyCabParts=cab.children.filter(o=>o!==cabCad&&o!==monitor);
+const cadWiper=segment(cabCad,rubber,.005);place(cadWiper,v(-.29,.22,.67),v(.08,.27,.67));
+const cadWiperBlade=segment(cabCad,rubber,.006);place(cadWiperBlade,v(-.10,.27,.67),v(.32,.31,.67));
+function disposeChildren(g){for(const o of [...g.children]){g.remove(o);o.traverse(m=>{if(m.geometry)m.geometry.dispose()})}}
+function buildUpperCAD(p,sc,X,Y,Z){
+ disposeChildren(bodyCad);
+ if(p.open)return;
+ const bodyW=p.width/sc,deck=p.deck/sc,tail=p.tail/sc,front=Math.max(p.cabD*.55+.08,p.track*.40)/sc;
+ const cv=(x,y,z)=>[X+z*(z<0?(X+bodyW/2)/1.40:(bodyW/2-X)/1.25),deck+y*(Y-deck)/.83,Z+(x-.18)*(x<.18?(tail+Z)/3.065:(front-Z)/1.14)];
+ const material=n=>n.mesh===23||n.mesh===30||n.mesh===34?paint:n.mesh===37||n.mesh===38||n.mesh===39?chrome:n.mesh===40||n.mesh===41?edge:n.mesh===8?chrome:steel;
+ for(const id of [47,51,63,69])cadHierarchy(bodyCad,'upper_structure',id,cv,material,true,srcRoot);
+ // Service panels, lower access tread and work lights on the CAD shell.
+ const wx=bodyW/2-.012,tailZ=-tail*.60,hood=deck+(Y-deck)*1.56;
+ for(let i=0;i<8;i++)box(bodyCad,rubber,wx,hood-.12,tailZ-i*.040/sc,.013,.12/sc,.017/sc);
+ for(const side of [-1,1]){const x=side*(bodyW*.36),z=-tail+.015;box(bodyCad,steel,x,deck+.19/sc,z,.11/sc,.075/sc,.03/sc);box(bodyCad,mat(0x8c2e15,.34),x,deck+.19/sc,z-.018/sc,.08/sc,.05/sc,.012/sc)}
+}
+const trackTemplates=[];
+function partTemplate(name,index,m){const g=new T.Group();cadMesh(g,name,index,(x,y,z)=>[-y,z,x],m,true);return g.children}
+for(let i=0;i<4;i++)trackTemplates.push(...partTemplate('track_shoelink',i,i===3?shoe:steel));
+const idlerTemplate=partTemplate('idler',0,steel),sprocketTemplate=partTemplate('sprocket',0,steel),rollerTemplate=partTemplate('roller',0,steel);
+let chainSets=[],trackPhase=0,lastTrackX=null,lastTrackZ=null;
+function buildTrackCAD(p,sc){
+ // Keep CAD template geometries shared; never dispose an instanced template.
+ trackCad.clear();chainSets=[];trackPhase=0;lastTrackX=lastTrackZ=null;
+ const L=p.track/sc,shoeW=p.shoe/sc,r=Math.min(.36/sc,L*.19),straight=L-2*r,loop=2*straight+2*Math.PI*r,n=Math.max(26,Math.round(loop/(p.nominal<=.15?.13/sc:.22/sc))),pitch=loop/n;
+ for(const side of [-1,1]){
+  const xx=side*(p.width-p.shoe)/2/sc,instances=[];
+  for(const template of trackTemplates){const inst=new T.InstancedMesh(template.geometry,template.material,n);inst.castShadow=true;inst.receiveShadow=true;inst.frustumCulled=false;trackCad.add(inst);instances.push(inst)}
+  const wheels=(list,z,y,scale)=>{for(const m of list){const o=mesh(trackCad,m.geometry,m.material,xx,y,z);o.scale.set(shoeW/.60,scale,scale);o.castShadow=true}}
+  wheels(idlerTemplate,straight/2,r,r/.2894);wheels(sprocketTemplate,-straight/2,r,r/.32);
+  for(let i=0;i<Math.max(3,Math.round(p.track/.42));i++){const count=Math.max(3,Math.round(p.track/.42));wheels(rollerTemplate,-straight/2+(i+.5)*straight/count,r*.37,r*.42/.063)}
+  chainSets.push({xx,r,straight,loop,n,pitch,shoeW,instances});
+ }
+}
+const linkDummy=new T.Object3D();
+function trackPose(set,d){
+ const {r,straight,loop}=set;d=((d%loop)+loop)%loop;
+ if(d<straight)return [2*r,-straight/2+d,0];
+ d-=straight;if(d<Math.PI*r){let a=d/r;return [r+r*Math.cos(a),straight/2+r*Math.sin(a),a]}
+ d-=Math.PI*r;if(d<straight)return [0,straight/2-d,Math.PI];
+ d-=straight;let a=d/r;return [r-r*Math.cos(a),-straight/2-r*Math.sin(a),Math.PI+a];
+}
+function updateTrackCAD(s){
+ if(lastTrackX!==null){const dx=s.x-lastTrackX,dz=s.z-lastTrackZ;trackPhase+=(dx*Math.sin(s.yaw)+dz*Math.cos(s.yaw))/s.scale}
+ lastTrackX=s.x;lastTrackZ=s.z;
+ for(const set of chainSets)for(let i=0;i<set.n;i++){
+  const [y,z,angle]=trackPose(set,i*set.pitch+trackPhase);
+  linkDummy.position.set(set.xx,y+.042,z);linkDummy.rotation.set(angle,0,0);linkDummy.scale.set(set.shoeW/.60,Math.max(.4,set.r/.32),set.pitch/.24);linkDummy.updateMatrix();
+  for(const inst of set.instances)inst.setMatrixAt(i,linkDummy.matrix);
+ }
+ for(const set of chainSets)for(const inst of set.instances)inst.instanceMatrix.needsUpdate=true;
+}
 const boom=group(upper,.38,1.45,.55),arm=group(boom,0,0,2.25),tool=group(arm,0,0,1.65),boomVisual=group(boom),armVisual=group(arm);
 extrude(boomVisual,paint,[[0,-.16],[.22,-.20],[.48,-.18],[.79,-.06],[1.13,.075],[1.38,.09],[1.78,-.035],[2.12,-.115],[2.25,-.10],[2.25,.13],[2.09,.20],[1.77,.31],[1.43,.46],[1.19,.45],[.92,.36],[.53,.24],[.20,.18],[0,.17]],.30,0,0,0,.035);
 extrude(armVisual,paint,[[-.19,.07],[-.10,-.13],[.10,-.19],[.49,-.155],[1.17,-.105],[1.50,-.10],[1.65,-.075],[1.68,.055],[1.52,.105],[.85,.14],[.33,.24],[.05,.26],[-.14,.21]],.23,0,0,0,.023);
@@ -548,25 +608,25 @@ let info=bucket?'土量 '+Math.round(soil*1000)/1000+' / '+Math.round(capacity*1
 }
 let width=0,height=0,profileKey='';
 
-function draw(s){const w=canvas.clientWidth,h=canvas.clientHeight;if(w!==width||h!==height){width=w;height=h;renderer.setSize(w,h,false);camera.aspect=w/Math.max(1,h);camera.fov=2*Math.atan(Math.max(Math.tan(29*Math.PI/180),Math.tan(27*Math.PI/180)/camera.aspect))*180/Math.PI;camera.fov=Math.min(108,camera.fov);camera.updateProjectionMatrix()}const {p,sc,B,A,X,Y,Z}=rig(s);
+function draw(s,renderFrame=true){const w=canvas.clientWidth,h=canvas.clientHeight;if(w!==width||h!==height){width=w;height=h;renderer.setSize(w,h,false);camera.aspect=w/Math.max(1,h);camera.fov=2*Math.atan(Math.max(Math.tan(29*Math.PI/180),Math.tan(27*Math.PI/180)/camera.aspect))*180/Math.PI;camera.fov=Math.min(108,camera.fov);camera.updateProjectionMatrix()}const {p,sc,B,A,X,Y,Z}=rig(s);
 if(profileKey!==p.id){profileKey=p.id;rebuildBuckets(s);lastFill=-1;lastFillTime=-1;
  const deck=p.deck/sc,roof=p.height/sc,bodyW=p.width/sc;
  undercarriage.scale.set(bodyW/2.29,deck/1.02,p.track/sc/3.0);
  for(let i=0;i<trackGroups.length;i++){const tg=trackGroups[i];tg.position.x=(i?1:-1)*(p.width-p.shoe)/2/sc;tg.scale.set(p.shoe/sc/.63,deck/1.02,p.track/sc/3.0)}
- housing.visible=!p.open;miniBody.visible=p.open;housing.scale.set(bodyW/2.1,deck/1.02,Math.max(.6,p.tail/sc/1.55));miniBody.position.y=deck;miniBody.scale.set(bodyW/.95,.60/sc,p.tail/sc/.88);
+ housing.visible=false;miniBody.visible=p.open;bodyCad.visible=!p.open;buildUpperCAD(p,sc,X,Y,Z);housing.scale.set(bodyW/2.1,deck/1.02,Math.max(.6,p.tail/sc/1.55));miniBody.position.y=deck;miniBody.scale.set(bodyW/.95,.60/sc,p.tail/sc/.88);
  bladeGroup.visible=p.mini;bladeGroup.position.set(0,0,p.track/sc*.57);bladeGroup.scale.set(bodyW,.35/sc,1/sc);
  const cabFloor=p.open?p.deck:p.deck+.28;
  cab.position.set(p.open?-.08/sc:-(p.width*.25)/sc,cabFloor/sc,.08/sc);
  cab.scale.set(p.cabW/sc/.91,(p.height-cabFloor)/sc/1.22,p.cabD/sc/1.36);
- cabShell.visible=!p.open;canopy.visible=p.open;
+ for(const part of legacyCabParts)part.visible=p.open;cabShell.visible=false;canopy.visible=p.open;cabCad.visible=!p.open;monitor.visible=true;
  boom.position.set(X,Y,Z);arm.position.z=B;tool.position.z=A;boomVisual.scale.z=B/2.25;armVisual.scale.z=A/1.65;
  const bScale=B/cadBoomLen,aScale=A/2.9;cadBoom.scale.set(p.width/sc/2.8,bScale,bScale);cadArm.scale.set(p.width/sc/2.8,aScale,aScale);
- undercarriage.visible=false;cadUnder.scale.set(p.width/sc/2.8,deck, p.track/sc/3.8244);
+ undercarriage.visible=false;cadUnder.scale.set(p.width/sc/2.8,deck, p.track/sc/3.8244);for(const g of trackGroups)g.visible=false;buildTrackCAD(p,sc);
 }
-base.position.set(-s.x,heightAt(-s.x,s.z),s.z);base.rotation.y=-s.yaw;base.scale.set(-s.scale,s.scale,s.scale);upper.rotation.y=s.swing;boom.rotation.x=-s.b;arm.rotation.x=-s.a;tool.rotation.x=-s.k;tools.forEach((o,i)=>o.visible=i===s.att);applyHydraulic(s);chisel.position.z=.96;updateRams(s);flexLines(s,B,A);const inside=s.cab&&s.active;
-base.updateMatrixWorld(true);soilStep(s);const local=(p,g=upper)=>g.localToWorld(p);if(inside){camera.position.copy(local(v(-.04,.79,.04),cab));camera.lookAt(camera.position.clone().add(local(v(0,-.10,1),upper).sub(local(v(0,0,0),upper)).multiplyScalar(7)))}else{const distance=Math.max(6.8,p.boom+p.arm+1.5)/sc;camera.position.copy(local(v(-distance*.85,distance*.58,distance*.94),base));camera.lookAt(local(v(s.active?0:2.1/sc,p.height*.48/sc,p.boom*.35/sc),base))}camera.updateMatrixWorld();sun.position.set(-s.x-18,28,s.z+12);sun.target.position.set(-s.x,0,s.z);
+base.position.set(-s.x,heightAt(-s.x,s.z),s.z);base.rotation.y=-s.yaw;base.scale.set(-s.scale,s.scale,s.scale);upper.rotation.y=s.swing;boom.rotation.x=-s.b;arm.rotation.x=-s.a;tool.rotation.x=-s.k;tools.forEach((o,i)=>o.visible=i===s.att);applyHydraulic(s);chisel.position.z=.96;updateRams(s);flexLines(s,B,A);updateTrackCAD(s);const inside=s.cab&&s.active;
+base.updateMatrixWorld(true);soilStep(s);const local=(p,g=upper)=>g.localToWorld(p);if(inside){camera.position.copy(local(v(-.04,p.open?.79:.88,p.open?.04:-.10),cab));camera.lookAt(camera.position.clone().add(local(v(0,-.23,1),upper).sub(local(v(0,0,0),upper)).multiplyScalar(7)))}else{const distance=Math.max(6.8,p.boom+p.arm+1.5)/sc;camera.position.copy(local(v(-distance*.85,distance*.58,distance*.94),base));camera.lookAt(local(v(s.active?0:2.1/sc,p.height*.48/sc,p.boom*.35/sc),base))}camera.updateMatrixWorld();sun.position.set(-s.x-18,28,s.z+12);sun.target.position.set(-s.x,0,s.z);
 const status=s.engine+'/'+s.unlocked;if(status!==lastDisplay){lastDisplay=status;dc.fillStyle='#14201c';dc.fillRect(0,0,256,192);dc.fillStyle=s.engine?'#a0e6a4':'#8a9993';dc.font='bold 23px monospace';dc.fillText(s.engine?'ENGINE ON':'STANDBY',15,40);dc.font='19px monospace';dc.fillText(s.unlocked?'HYD READY':'LOCKED',15,79);dc.fillStyle='#64746a';dc.fillRect(15,112,226,18);dc.fillStyle='#d3ba65';dc.fillRect(15,112,s.engine?155:10,18);dc.font='15px monospace';dc.fillText('FUEL    TEMP',15,155);displayTex.needsUpdate=true}
-renderer.render(scene,camera)}
+if(renderFrame)renderer.render(scene,camera)}
 function inspect(s){
  const spec=bucketSpec(s), q=spec?[0,spec.tip[0],spec.tip[1]]:[0,0,1],visual=tool.localToWorld(v(...q)),analytic=toolPoint(s,...q);
  const gap=Math.hypot(visual.x-analytic.x,visual.y-analytic.y,visual.z-analytic.z);

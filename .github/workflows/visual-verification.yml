@@ -16,6 +16,7 @@ jobs:
           node-version: '22'
       - run: npm install --no-save playwright three@0.160.1 sharp
       - run: npx playwright install --with-deps chromium
+      - run: node tests/prepare-photo-assets.mjs
       - run: node tests/visual-verify.mjs
       - uses: actions/upload-artifact@v4
         if: always()

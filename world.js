@@ -72,11 +72,36 @@ function linkGeometry(s,k=s.k){
 
 function createWorld(canvas){
 const T=THREE, scene=new T.Scene(), renderer=new T.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance',preserveDrawingBuffer:new URLSearchParams(location.search).get('verify')==='1'}), camera=new T.PerspectiveCamera(58,1,.04,450);
-renderer.setPixelRatio(Math.min(devicePixelRatio,1.6));renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.03;
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.6));renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.12;
 scene.background=new T.Color(0xb8d0e0);scene.fog=new T.FogExp2(0xb8c9d1,.007);
-scene.add(new T.HemisphereLight(0xe1efff,0x8c7858,1.45));const sun=new T.DirectionalLight(0xffedcf,2.65);sun.position.set(-18,28,12);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);Object.assign(sun.shadow.camera,{left:-14,right:14,top:14,bottom:-14,near:.5,far:80});sun.shadow.bias=-.00025;sun.shadow.normalBias=.03;scene.add(sun,sun.target);
+scene.add(new T.HemisphereLight(0xc6dfff,0x8b7863,1.10));const sun=new T.DirectionalLight(0xfff2db,3.0);sun.position.set(-18,28,12);sun.castShadow=true;sun.shadow.mapSize.set(1536,1536);Object.assign(sun.shadow.camera,{left:-14,right:14,top:14,bottom:-14,near:.5,far:80});sun.shadow.bias=-.00025;sun.shadow.normalBias=.03;scene.add(sun,sun.target);
 const mat=(color,roughness=.7,metalness=0)=>new T.MeshStandardMaterial({color,roughness,metalness});
 const paint=mat(0x159d9b,.43,.23),edge=mat(0x117b79,.55,.35),steel=mat(0x343b3e,.63,.55),track=mat(0x302e29,.9,.35),shoe=mat(0x55534a,.85,.4),rubber=mat(0x15191a,.95),chrome=mat(0xcdd7dd,.20,.82),inner=mat(0x454a46,.9),seatMat=mat(0x272d30,.92),glass=new T.MeshStandardMaterial({color:0x9ab9c8,transparent:true,opacity:.14,roughness:.18,metalness:.1,depthWrite:false,side:T.DoubleSide}),screen=mat(0x193129,.5);
+
+// Surface wear is calculated in 3D so the imported solids do not need UV maps.
+function weathered(material,kind){
+ material.onBeforeCompile=shader=>{
+  shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vSteelPosition;').replace('#include <begin_vertex>','#include <begin_vertex>\nvSteelPosition=position;');
+  const fn=`
+varying vec3 vSteelPosition;
+float whash(vec3 p){p=fract(p*.3183099+.1);p*=17.;return fract(p.x*p.y*p.z*(p.x+p.y+p.z));}
+float wnoise(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(mix(whash(i),whash(i+vec3(1,0,0)),f.x),mix(whash(i+vec3(0,1,0)),whash(i+vec3(1,1,0)),f.x),f.y),mix(mix(whash(i+vec3(0,0,1)),whash(i+vec3(1,0,1)),f.x),mix(whash(i+vec3(0,1,1)),whash(i+vec3(1,1,1)),f.x),f.y),f.z);}
+`;
+  shader.fragmentShader=shader.fragmentShader.replace('#include <common>','#include <common>\n'+fn);
+  const color=`
+vec3 wp=vSteelPosition;
+float patches=wnoise(wp*5.5)*.56+wnoise(wp*22.)*.29+wnoise(wp*95.)*.15;
+float grit=wnoise(wp*175.);
+float streak=wnoise(wp*vec3(65.,12.,5.));
+float dirt=smoothstep(.49,.75,patches);
+`;
+  const treatment=kind===0?`diffuseColor.rgb*=.82+.24*patches;diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.16,.105,.065),dirt*.43);diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.34,.35,.33),smoothstep(.83,.98,streak)*smoothstep(.68,.86,patches)*.32);`:kind===1?`diffuseColor.rgb=mix(diffuseColor.rgb*.65,vec3(.23,.18,.13),dirt*.66);diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.39,.40,.39),smoothstep(.53,.86,streak)*.43);diffuseColor.rgb*=.78+.40*grit;`:`diffuseColor.rgb*=.68+.52*patches;diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.23,.155,.085),dirt*.61);`;
+  shader.fragmentShader=shader.fragmentShader.replace('#include <color_fragment>','#include <color_fragment>\n'+color+treatment).replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nroughnessFactor=clamp(roughnessFactor+(dirt-.40)*.26,.18,1.);');
+ };
+ material.customProgramCacheKey=()=> 'earthwork-weathered-'+kind;
+ return material;
+}
+weathered(paint,0);weathered(edge,0);weathered(steel,2);weathered(shoe,2);weathered(track,2);
 const v=(x,y,z)=>new T.Vector3(x,y,z);function group(parent,x=0,y=0,z=0){const g=new T.Group();g.position.set(x,y,z);parent.add(g);return g}function mesh(parent,geo,m,x=0,y=0,z=0,shadow=true){const o=new T.Mesh(geo,m);o.position.set(x,y,z);o.castShadow=shadow;o.receiveShadow=true;parent.add(o);return o}function box(p,m,x,y,z,w,h,d){return mesh(p,new T.BoxGeometry(w,h,d),m,x,y,z)}function cyl(p,m,x,y,z,r,h,axis='y',r2=r){const o=mesh(p,new T.CylinderGeometry(r,r2,h,16),m,x,y,z);if(axis==='x')o.rotation.z=Math.PI/2;if(axis==='z')o.rotation.x=Math.PI/2;return o}function segment(p,m,r){return mesh(p,new T.CylinderGeometry(r,r,1,12),m)}function place(o,a,b){o.position.copy(a).add(b).multiplyScalar(.5);const d=b.clone().sub(a);o.scale.y=Math.max(.001,d.length());o.quaternion.setFromUnitVectors(v(0,1,0),d.normalize())}
 function extrude(p,m,points,width,x=0,y=0,z=0,bevel=.035){const sh=new T.Shape();points.forEach(([zz,yy],i)=>i?sh.lineTo(zz,yy):sh.moveTo(zz,yy));sh.closePath();const g=new T.ExtrudeGeometry(sh,{depth:width,bevelEnabled:bevel>0,bevelSize:bevel,bevelThickness:bevel,bevelSegments:2,steps:1});g.translate(0,0,-width/2);g.rotateY(-Math.PI/2);return mesh(p,g,m,x,y,z)}
 
@@ -109,7 +134,7 @@ let seed=9127;function rnd(){seed=(seed*1664525+1013904223)>>>0;return seed/4294
 
 // A generated outdoor environment gives metal and glazing a sky/ground reflection.
 const envCanvas=document.createElement('canvas');envCanvas.width=512;envCanvas.height=256;const ec=envCanvas.getContext('2d');
-const skyGrad=ec.createLinearGradient(0,0,0,256);skyGrad.addColorStop(0,'#6c9bc5');skyGrad.addColorStop(.28,'#9dbbd1');skyGrad.addColorStop(.49,'#e5e6da');skyGrad.addColorStop(.51,'#b1a18a');skyGrad.addColorStop(1,'#62584c');ec.fillStyle=skyGrad;ec.fillRect(0,0,512,256);
+const skyGrad=ec.createLinearGradient(0,0,0,256);skyGrad.addColorStop(0,'#367cb7');skyGrad.addColorStop(.28,'#70addf');skyGrad.addColorStop(.49,'#c8dce8');skyGrad.addColorStop(.51,'#b1a18a');skyGrad.addColorStop(1,'#62584c');ec.fillStyle=skyGrad;ec.fillRect(0,0,512,256);
 for(let i=0;i<60;i++){let xx=rnd()*512,yy=35+rnd()*65,rr=12+rnd()*25;const g=ec.createRadialGradient(xx,yy,0,xx,yy,rr);g.addColorStop(0,'rgba(250,250,244,.25)');g.addColorStop(1,'rgba(250,250,244,0)');ec.fillStyle=g;ec.fillRect(xx-rr,yy-rr,rr*2,rr*2)}
 const env=new T.CanvasTexture(envCanvas);env.colorSpace=T.SRGBColorSpace;env.mapping=T.EquirectangularReflectionMapping;const pm=new T.PMREMGenerator(renderer);const envTarget=pm.fromEquirectangular(env);scene.environment=envTarget.texture;scene.background=env;pm.dispose();
 const texCanvas=document.createElement('canvas');texCanvas.width=texCanvas.height=512;const tc=texCanvas.getContext('2d');const image=tc.createImageData(512,512);let layers=[8,16,32,64].map(n=>({n,a:Array.from({length:n*n},rnd)}));function noise(l,x,y){let u=x*l.n/512,w=y*l.n/512,i=Math.floor(u),j=Math.floor(w),a=u-i,b=w-j;a=a*a*(3-2*a);b=b*b*(3-2*b);const at=(i,j)=>l.a[((j+l.n)%l.n)*l.n+(i+l.n)%l.n];return (at(i,j)*(1-a)+at(i+1,j)*a)*(1-b)+(at(i,j+1)*(1-a)+at(i+1,j+1)*a)*b}
@@ -121,10 +146,20 @@ const soilColor=new T.Color(), cDry=new T.Color(0xe0cbb1),cWet=new T.Color(0x746
 function paintVertex(i){const delta=heights[i]-initial[i], variation=.92+.08*Math.sin(i*17.17);soilColor.copy(cDry).lerp(delta<0?cWet:cFresh,Math.min(.8,Math.abs(delta)*2.4)).multiplyScalar(variation);colors.set([soilColor.r,soilColor.g,soilColor.b],i*3)}
 for(let i=0;i<pos.count;i++){let xx=pos.getX(i),zz=pos.getZ(i);let fade=Math.min(1,Math.max(0,(half-Math.max(Math.abs(xx),Math.abs(zz)))/3));let y=(Math.sin(xx*.38)*Math.cos(zz*.32)*.085+Math.sin(xx*1.4+zz*.7)*.025)*fade;initial[i]=heights[i]=y;pos.setY(i,y);paintVertex(i)}
 geo.setAttribute('color',new T.BufferAttribute(colors,3));geo.computeVertexNormals();geo.computeBoundingSphere();geo.boundingSphere.radius+=5;
-const detail=dirt.clone();detail.repeat.set(terrainSize/3,terrainSize/3);detail.needsUpdate=true;
+const detail=dirt.clone();detail.repeat.set(terrainSize/2,terrainSize/2);detail.needsUpdate=true;
 const groundMaterial=new T.MeshStandardMaterial({color:0xffffff,vertexColors:true,map:detail,bumpMap:detail,bumpScale:.027,roughness:.98});
 const ground=mesh(scene,geo,groundMaterial,0,0,0,false);
-const outerMat=new T.MeshStandardMaterial({map:dirt,roughness:1,color:0xb5a18a});
+let photoAssetsReady=Promise.resolve(false);
+if(typeof EARTH_PHOTOS!=='undefined'){
+ const loader=new T.TextureLoader();
+ const load=(src)=>new Promise((resolve,reject)=>loader.load(src,resolve,undefined,reject));
+ photoAssetsReady=Promise.all([load(EARTH_PHOTOS.ground),load(EARTH_PHOTOS.sky)]).then(([g,sky])=>{
+  g.colorSpace=T.SRGBColorSpace;g.wrapS=g.wrapT=T.RepeatWrapping;g.repeat.set(terrainSize/2.5,terrainSize/2.5);g.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());
+  const bump=g.clone();bump.colorSpace=T.NoColorSpace;bump.needsUpdate=true;groundMaterial.map=g;groundMaterial.bumpMap=bump;groundMaterial.bumpScale=.037;groundMaterial.needsUpdate=true;
+  sky.colorSpace=T.SRGBColorSpace;sky.mapping=T.EquirectangularReflectionMapping;const gen=new T.PMREMGenerator(renderer);const target=gen.fromEquirectangular(sky);scene.environment=target.texture;scene.background=sky;gen.dispose();return true;
+ }).catch(()=>false);
+}
+const outerMat=new T.MeshStandardMaterial({map:dirt,roughness:1,color:0xb5a18a});photoAssetsReady.then(ok=>{if(ok){const m=groundMaterial.map.clone();m.repeat.set(65,65);m.needsUpdate=true;outerMat.map=m;outerMat.color.set(0xb5a18a);outerMat.needsUpdate=true}});
 for(const [xx,zz,ww,dd] of [[0,-101,202,158],[0,101,202,158],[-101,0,158,44],[101,0,158,44]]){const outer=mesh(scene,new T.PlaneGeometry(ww,dd),outerMat,xx,-.015,zz,false);outer.rotation.x=-Math.PI/2}
 let dirty=false,lastNormals=0;const unstable=new Set();
 function heightAt(xx,zz){let u=(xx+half)/step,w=(zz+half)/step;if(u<0||w<0||u>=subdivisions||w>=subdivisions)return 0;let ix=Math.floor(u),iz=Math.floor(w),dx=u-ix,dz=w-iz,i=iz*stride+ix;return (heights[i]*(1-dx)+heights[i+1]*dx)*(1-dz)+(heights[i+stride]*(1-dx)+heights[i+stride+1]*dx)*dz}
@@ -139,8 +174,9 @@ function refreshTerrain(){if(!dirty)return;pos.needsUpdate=true;geo.attributes.c
 const earth=mat(0x8f785a,1),grass=mat(0x68764b,1),pine=mat(0x405a38,1),bark=mat(0x6a5440,1),stone=mat(0x77766a,1);
 const gravel=new T.InstancedMesh(new T.IcosahedronGeometry(1,0),stone,700),dummy=new T.Object3D();for(let i=0;i<700;i++){let xx=(rnd()-.5)*42,zz=(rnd()-.5)*42;if(Math.abs(xx)<5&&Math.abs(zz)<7)xx+=xx<0?-5:5;let r=.012+rnd()*.047;dummy.position.set(xx,heightAt(xx,zz)+r*.15,zz);dummy.scale.set(r,r*.55,r*.8);dummy.rotation.set(rnd()*3,rnd()*6,rnd()*3);dummy.updateMatrix();gravel.setMatrixAt(i,dummy.matrix);gravel.setColorAt(i,new T.Color().setHSL(.10,.14,.30+rnd()*.22))}gravel.instanceMatrix.needsUpdate=true;scene.add(gravel);
 
-for(let i=0;i<26;i++){const angle=i/26*6.283,rad=65+rnd()*33;let hill=mesh(scene,new T.IcosahedronGeometry(1,2),i%3?grass:earth,Math.sin(angle)*rad,-3,Math.cos(angle)*rad,false);hill.scale.set(18+rnd()*20,6+rnd()*13,14+rnd()*20)}
-for(let i=0;i<64;i++){const angle=rnd()*6.28,rad=28+rnd()*48,xx=Math.sin(angle)*rad,zz=Math.cos(angle)*rad,h=2.5+rnd()*3;const tree=group(scene,xx,0,zz);cyl(tree,bark,0,h*.28,0,.12,h*.56);for(let j=0;j<5;j++){let crown=mesh(tree,new T.IcosahedronGeometry(1,1),pine,(rnd()-.5)*h*.24,h*(.55+j*.105),(rnd()-.5)*h*.24,false);crown.scale.set(h*(.29-j*.033),h*.24,h*(.26-j*.026));crown.rotation.y=rnd()*6.28}}
+const farScenery=group(scene);for(let i=0;i<26;i++){const angle=i/26*6.283,rad=65+rnd()*33;let hill=mesh(farScenery,new T.IcosahedronGeometry(1,2),i%3?grass:earth,Math.sin(angle)*rad,-3,Math.cos(angle)*rad,false);hill.scale.set(18+rnd()*20,6+rnd()*13,14+rnd()*20)}
+for(let i=0;i<64;i++){const angle=rnd()*6.28,rad=28+rnd()*48,xx=Math.sin(angle)*rad,zz=Math.cos(angle)*rad,h=2.5+rnd()*3;const tree=group(farScenery,xx,0,zz);cyl(tree,bark,0,h*.28,0,.12,h*.56);for(let j=0;j<5;j++){let crown=mesh(tree,new T.IcosahedronGeometry(1,1),pine,(rnd()-.5)*h*.24,h*(.55+j*.105),(rnd()-.5)*h*.24,false);crown.scale.set(h*(.29-j*.033),h*.24,h*(.26-j*.026));crown.rotation.y=rnd()*6.28}}
+photoAssetsReady.then(ok=>{if(ok)farScenery.visible=false});
 for(let i=0;i<8;i++){let xx=15+rnd()*14,zz=-12+rnd()*30;let pile=mesh(scene,new T.IcosahedronGeometry(1,2),earth,xx,-.24,zz);pile.scale.set(2+rnd()*2,1+rnd()*1.2,2+rnd()*2)}
 for(let i=0;i<26;i++){let xx=-14,zz=-23+i*1.8;box(scene,steel,xx,.65,zz,.08,1.3,.08);if(i<25){box(scene,edge,xx,.96,zz+.9,.055,.10,1.8);box(scene,edge,xx,.48,zz+.9,.055,.10,1.8)}}
 const orange=mat(0xe86b22,.65),white=mat(0xe5e1d6,.7);for(let i=0;i<6;i++){const cone=group(scene,-5+i*2,0,12);box(cone,rubber,0,.035,0,.42,.07,.42);cyl(cone,orange,0,.25,0,.035,.43,'y',.16);cyl(cone,white,0,.29,0,.075,.09,'y',.10)}
@@ -165,7 +201,7 @@ const blade=segment(cabShell,rubber,.007);place(blade,v(-.12,.305,.65),v(.33,.34
 box(cab,seatMat,-.04,.23,-.13,.51,.18,.54);const back=box(cab,seatMat,-.04,.54,-.39,.49,.56,.13);back.rotation.x=-.10;box(cab,seatMat,-.04,.84,-.43,.31,.18,.13);
 for(const xx of [-.30,.29]){box(cab,inner,xx,.30,.03,.16,.34,.53);box(cab,seatMat,xx,.50,-.09,.16,.08,.36);cyl(cab,rubber,xx,.57,.20,.045,.16);box(cab,rubber,xx,.67,.20,.10,.12,.085)}
 for(const xx of [-.09,.10]){box(cab,steel,xx,.09,.45,.12,.055,.24);cyl(cab,steel,xx,.24,.49,.018,.28);box(cab,rubber,xx,.39,.49,.075,.09,.055)}
-const monitor=group(cab,.32,.64,.48);monitor.rotation.y=-.35;box(monitor,steel,0,0,0,.25,.20,.06);const displayCanvas=document.createElement('canvas');displayCanvas.width=256;displayCanvas.height=192;const dc=displayCanvas.getContext('2d'),displayTex=new T.CanvasTexture(displayCanvas);displayTex.colorSpace=T.SRGBColorSpace;const monitorFace=box(monitor,new T.MeshBasicMaterial({map:displayTex}),0,0,-.034,.22,.16,.006);let lastDisplay='';
+const monitor=group(cab,.32,.64,.48);monitor.rotation.y=-.35;box(monitor,steel,0,0,0,.25,.20,.06);const displayCanvas=document.createElement('canvas');displayCanvas.width=256;displayCanvas.height=192;const dc=displayCanvas.getContext('2d'),displayTex=new T.CanvasTexture(displayCanvas);displayTex.colorSpace=T.SRGBColorSpace;displayTex.repeat.x=-1;displayTex.offset.x=1;const monitorFace=box(monitor,new T.MeshBasicMaterial({map:displayTex}),0,0,-.034,.22,.16,.006);let lastDisplay='';
 const mirrorArm=segment(cab,steel,.018);place(mirrorArm,v(.43,.92,.52),v(.65,.96,.66));box(cab,steel,.65,.96,.66,.15,.20,.045);box(cab,chrome,.65,.96,.63,.12,.17,.015);
 
 // Independent cab and upper-frame assemblies imported from the original CAD.
@@ -290,7 +326,7 @@ function adjust(pair,a,b,f=.58){const mid=a.clone().lerp(b,f);place(pair[0],a,mi
 const hoses=[];for(let i=0;i<4;i++){const x=-.125+i*.080,pts=[v(x,.20,.08),v(x,.32,.45),v(x,.49,1.10),v(x,.51,1.38),v(x,.30,1.86),v(x,.20,2.20)];const curve=new T.CatmullRomCurve3(pts);hoses.push(mesh(boomVisual,new T.TubeGeometry(curve,32,.014,8,false),steel));for(const t of [.18,.42,.76]){let p=curve.getPoint(t);box(boomVisual,steel,p.x,p.y,p.z,.05,.032,.055)}}
 const flexHoses=[];for(let i=0;i<3;i++){const o=mesh(boom,new T.BufferGeometry(),rubber);flexHoses.push(o)}let lastHosePose='';
 function flexLines(s,B,A){const key=Math.round(s.a*80)+':'+Math.round(B*100);if(key===lastHosePose)return;lastHosePose=key;for(let i=0;i<flexHoses.length;i++){const x=-.085+i*.08;const [ey,ez]=rotateYZ(.23,A*.20,s.a);const curve=new T.CatmullRomCurve3([v(x,.20,B*.90),v(x,.30,B*.99),v(x,.31,B+.10),v(x,ey,B+ez)]);const o=flexHoses[i];o.geometry.dispose();o.geometry=new T.TubeGeometry(curve,14,.016,6,false)}}
-const tools=[];const worn=mat(0x777774,.46,.73),bucketSteel=mat(0x555653,.67,.64);
+const tools=[];const worn=weathered(mat(0x777774,.46,.73),1),bucketSteel=weathered(mat(0x555653,.67,.64),1);
 function curvedPlate(p,points,w,m){const curve=new T.CatmullRomCurve3(points.map(([z,y])=>v(0,y,z)),false,'centripetal');let verts=[],ix=[],normals;const count=22;for(let j=0;j<=count;j++){let q=curve.getPoint(j/count);verts.push(-w/2,q.y,q.z,w/2,q.y,q.z)}for(let j=0;j<count;j++){let i=j*2;ix.push(i,i+1,i+2,i+1,i+3,i+2)}const geom=new T.BufferGeometry();geom.setAttribute('position',new T.Float32BufferAttribute(verts,3));geom.setIndex(ix);geom.computeVertexNormals();let mm=m.clone();mm.side=T.DoubleSide;return mesh(p,geom,mm)}
 // Build continuous thickness steel shell, not a solid block. All parts use the same physical profile.
 function cadBucket(spec){
@@ -623,8 +659,8 @@ if(profileKey!==p.id){profileKey=p.id;rebuildBuckets(s);lastFill=-1;lastFillTime
  const bScale=B/cadBoomLen,aScale=A/2.9;cadBoom.scale.set(p.width/sc/2.8,bScale,bScale);cadArm.scale.set(p.width/sc/2.8,aScale,aScale);
  undercarriage.visible=false;cadUnder.scale.set(p.width/sc/2.8,deck, p.track/sc/3.8244);for(const g of trackGroups)g.visible=false;buildTrackCAD(p,sc);
 }
-base.position.set(-s.x,heightAt(-s.x,s.z),s.z);base.rotation.y=-s.yaw;base.scale.set(-s.scale,s.scale,s.scale);upper.rotation.y=s.swing;boom.rotation.x=-s.b;arm.rotation.x=-s.a;tool.rotation.x=-s.k;tools.forEach((o,i)=>o.visible=i===s.att);applyHydraulic(s);chisel.position.z=.96;updateRams(s);flexLines(s,B,A);updateTrackCAD(s);const inside=s.cab&&s.active;
-base.updateMatrixWorld(true);soilStep(s);const local=(p,g=upper)=>g.localToWorld(p);if(inside){camera.position.copy(local(v(-.04,p.open?.79:.88,p.open?.04:-.10),cab));camera.lookAt(camera.position.clone().add(local(v(0,-.23,1),upper).sub(local(v(0,0,0),upper)).multiplyScalar(7)))}else{const distance=Math.max(6.8,p.boom+p.arm+1.5)/sc;camera.position.copy(local(v(-distance*.85,distance*.58,distance*.94),base));camera.lookAt(local(v(s.active?0:2.1/sc,p.height*.48/sc,p.boom*.35/sc),base))}camera.updateMatrixWorld();sun.position.set(-s.x-18,28,s.z+12);sun.target.position.set(-s.x,0,s.z);
+base.position.set(-s.x,heightAt(-s.x,s.z),s.z);base.rotation.y=-s.yaw;base.scale.set(-s.scale,s.scale,s.scale);upper.rotation.y=s.swing;boom.rotation.x=-s.b;arm.rotation.x=-s.a;tool.rotation.x=-s.k;tools.forEach((o,i)=>o.visible=i===s.att);applyHydraulic(s);chisel.position.z=.96;updateRams(s);flexLines(s,B,A);updateTrackCAD(s);const inside=s.cab&&s.active;const targetFov=inside?Math.min(100,2*Math.atan(Math.max(Math.tan(21*Math.PI/180),Math.tan(27*Math.PI/180)/camera.aspect))*180/Math.PI):Math.min(90,2*Math.atan(Math.max(Math.tan(22*Math.PI/180),Math.tan(25*Math.PI/180)/camera.aspect))*180/Math.PI);if(Math.abs(camera.fov-targetFov)>.01){camera.fov=targetFov;camera.updateProjectionMatrix()}
+base.updateMatrixWorld(true);soilStep(s);const local=(p,g=upper)=>g.localToWorld(p);if(inside){camera.position.copy(local(v(-.04,p.open?.79:.88,p.open?.04:-.10),cab));camera.lookAt(camera.position.clone().add(local(v(0,-.23,1),upper).sub(local(v(0,0,0),upper)).multiplyScalar(7)))}else{const distance=Math.max(2.75,p.boom+p.arm)*1.12/sc;camera.position.copy(local(v(-distance*.84,distance*.48,distance*.70),base));camera.lookAt(local(v(s.active?0:Math.min(2.1,p.width*.65)/sc,p.height*.67/sc,p.boom*.39/sc),base))}camera.updateMatrixWorld();sun.position.set(-s.x-18,28,s.z+12);sun.target.position.set(-s.x,0,s.z);
 const status=s.engine+'/'+s.unlocked;if(status!==lastDisplay){lastDisplay=status;dc.fillStyle='#14201c';dc.fillRect(0,0,256,192);dc.fillStyle=s.engine?'#a0e6a4':'#8a9993';dc.font='bold 23px monospace';dc.fillText(s.engine?'ENGINE ON':'STANDBY',15,40);dc.font='19px monospace';dc.fillText(s.unlocked?'HYD READY':'LOCKED',15,79);dc.fillStyle='#64746a';dc.fillRect(15,112,226,18);dc.fillStyle='#d3ba65';dc.fillRect(15,112,s.engine?155:10,18);dc.font='15px monospace';dc.fillText('FUEL    TEMP',15,155);displayTex.needsUpdate=true}
 if(renderFrame)renderer.render(scene,camera)}
 function inspect(s){
@@ -635,5 +671,5 @@ function inspect(s){
  const gl=renderer.getContext(),errors=[];for(let i=0;i<16;i++){const code=gl.getError();if(code===gl.NO_ERROR)break;errors.push(code)}
  return {model:machineProfile(s).id,attachment:s.att,view:s.cab?'cab':'outside',meshCount:meshes,vertexCount:vertices,invalidBounds:invalid,tipErrorM:gap,bounds:{min:bounds.min.toArray(),max:bounds.max.toArray()},camera:camera.position.toArray(),cameraDirection:camera.getWorldDirection(v(0,0,0)).toArray(),soil,terrainMin:Math.min(...heights),linkValid:linkGeometry(s).valid,webglErrors:errors,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles};
 }
-return {draw,resetTerrain,resolveMotion,inspect};
+return {draw,resetTerrain,resolveMotion,inspect,photoAssetsReady};
 }

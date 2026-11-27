@@ -55,7 +55,7 @@ for(const g of [boom,arm,tool]){cyl(g,steel,0,0,0,.14,.40,'x');for(const side of
 function cylinder(parent,r){return [segment(parent,steel,r),segment(parent,chrome,r*.52)]}const lift=cylinder(upper,.085),stickCylinder=cylinder(boom,.065),bucketCylinder=cylinder(arm,.05);
 function adjust(pair,a,b,f=.58){const mid=a.clone().lerp(b,f);place(pair[0],a,mid);place(pair[1],mid,b)}
 const hoses=[];for(let i=0;i<3;i++){const pts=[v(-.12+i*.065,.17,.05),v(-.12+i*.065,.36,.45),v(-.12+i*.065,.42,1.1),v(-.12+i*.065,.25,1.75),v(-.12+i*.065,.16,2.20)];const curve=new T.CatmullRomCurve3(pts);hoses.push(mesh(boom,new T.TubeGeometry(curve,20,.019,6,false),rubber))}
-const tools=[];function bucket(w,teeth, skeleton=false){const g=group(tool);const shape=[[-.10,-.04],[.06,-.28],[.35,-.38],[.69,-.25],[.79,-.11],[.48,.04],[.16,.13]];for(const side of [-1,1])extrude(g,steel,shape,.055,side*(w/2-.028),0,0,.012);for(let i=0;i<shape.length-1;i++){const [z1,y1]=shape[i],[z2,y2]=shape[i+1];if(i===shape.length-2)continue;let o=box(g,steel,0,(y1+y2)/2,(z1+z2)/2,w,.055,Math.hypot(z2-z1,y2-y1));o.rotation.x=-Math.atan2(y2-y1,z2-z1);if(skeleton&&i>0&&i<4){o.visible=false;for(let j=0;j<7;j++){let bar=box(g,steel,(j-3)*w/7,(y1+y2)/2,(z1+z2)/2,.042,.06,Math.hypot(z2-z1,y2-y1));bar.rotation.x=o.rotation.x}}}for(let i=0;i<teeth;i++){let xx=(i-(teeth-1)/2)*w/(teeth+.5);extrude(g,shoe,[[.70,-.23],[.97,-.26],[.81,-.12]],.085,xx,0,0,.012)}box(g,edge,0,.085,.12,.30,.14,.24);return g}
+const tools=[];function bucket(w,teeth, skeleton=false){const g=group(tool);const shape=[[-.10,.04],[.06,.28],[.35,.38],[.64,.32],[.79,.18],[.16,-.13]];for(const side of [-1,1])extrude(g,steel,shape,.055,side*(w/2-.028),0,0,.012);for(let i=0;i<shape.length-1;i++){const [z1,y1]=shape[i],[z2,y2]=shape[i+1];if(i===shape.length-2)continue;let o=box(g,steel,0,(y1+y2)/2,(z1+z2)/2,w,.055,Math.hypot(z2-z1,y2-y1));o.rotation.x=-Math.atan2(y2-y1,z2-z1);if(skeleton&&i>0&&i<4){o.visible=false;for(let j=0;j<7;j++){let bar=box(g,steel,(j-3)*w/7,(y1+y2)/2,(z1+z2)/2,.042,.06,Math.hypot(z2-z1,y2-y1));bar.rotation.x=o.rotation.x}}}for(let i=0;i<teeth;i++){let xx=(i-(teeth-1)/2)*w/(teeth+.5);extrude(g,shoe,[[.70,.22],[.97,.26],[.81,.11]],.085,xx,0,0,.012)}box(g,edge,0,-.085,.12,.30,.14,.24);box(g,shoe,0,.18,.79,w,.065,.09);return g}
 tools[0]=bucket(.77,5);tools[1]=bucket(1.30,0);tools[2]=bucket(.38,3);const breaker=group(tool);box(breaker,steel,0,0,.44,.30,.34,.92);box(breaker,paint,0,.03,.38,.32,.23,.64);cyl(breaker,chrome,0,0,1.02,.045,.46,'z');tools[3]=breaker;const fork=group(tool);box(fork,steel,0,0,.14,.86,.16,.18);for(const side of [-1,1])box(fork,steel,side*.27,-.12,.55,.11,.09,.91);tools[4]=fork;tools[5]=bucket(.82,5,true);const jaws=[];for(let i=6;i<=7;i++){const g=group(tool),pair=[];box(g,steel,0,0,.16,.48,.30,.37);for(const side of [-1,1]){let j=group(g,side*.17,0,.26);extrude(j,steel,[[0,-.12],[.52,-.15],[.68,.03],[.42,.16],[0,.12]],.13,0,0,0,.02);pair.push(j)}jaws.push(pair);tools[i]=g}
 
 const carried=mesh(tool,new T.IcosahedronGeometry(1,2),new T.MeshStandardMaterial({color:0x856b4c,map:detail,roughness:1}),0,-.07,.35,false);carried.visible=false;
@@ -63,19 +63,19 @@ let soil=0, previousTip=null,previousK=null,lastMachine=null,soilTick=0,lastSoil
 function resetTerrain(){heights.set(initial);for(let i=0;i<pos.count;i++){pos.setY(i,heights[i]);paintVertex(i)}pos.needsUpdate=true;geo.attributes.color.needsUpdate=true;geo.computeVertexNormals();soil=0;previousTip=null;previousK=null;dumping=false;lastMachine=null;carried.visible=false;dirty=false;lastSoilInfo=''}
 function soilStep(s){
 const dt=Math.max(0,Math.min(.075,s.dt||0));const bucket=[0,1,2,5].includes(s.att),capacity=Math.max(.01,(s.capacity||.25)*([1,1.15,.55,0,0,.8,0,0][s.att]||1));
-const tooth=tool.localToWorld(v(0,s.att===1?-.14:-.25,s.att===1?.80:.94));
+const tooth=tool.localToWorld(v(0,s.att===1?.18:.26,s.att===1?.79:.97));
 const dk=previousK===null?0:s.k-previousK;const movement=previousTip?tooth.distanceTo(previousTip):0;previousK=s.k;
 if(s.active&&s.engine&&s.unlocked&&bucket&&dt>0){
 const width=([.77,1.30,.38,0,0,.82][s.att]||.77)*s.scale, radius=Math.max(step*.95,width*.57);
 const surface=heightAt(tooth.x,tooth.z);
 if(dk>0.00005&&s.k>-.48&&tooth.y>surface+.22&&soil>0)dumping=true;
 if(dk<-.00005||s.k<-.60)dumping=false;
-if(dumping&&soil>0){const drop=tool.localToWorld(v(0,-.12,.7)),amount=Math.min(soil,capacity*dt*1.4);let cells=[],weight=0;brush(drop.x,drop.z,Math.max(.46,width*.85),(i,w)=>{cells.push([i,w]);weight+=w});if(weight>0){for(const [i,w] of cells)change(i,heights[i]+amount*w/weight/(step*step));soil-=amount}}
+if(dumping&&soil>0){const drop=tool.localToWorld(v(0,.12,.7)),amount=Math.min(soil,capacity*dt*1.4);let cells=[],weight=0;brush(drop.x,drop.z,Math.max(.46,width*.85),(i,w)=>{cells.push([i,w]);weight+=w});if(weight>0){for(const [i,w] of cells)change(i,heights[i]+amount*w/weight/(step*step));soil-=amount}}
 else if(soil<capacity&&tooth.y<surface+.075*s.scale&&movement>.0003&&(dk<0.00005||Math.abs(dk)<.0001)){
 let samples=Math.min(6,Math.max(1,Math.ceil(movement/(step*.55))));for(let j=1;j<=samples;j++){let p=previousTip?previousTip.clone().lerp(tooth,j/samples):tooth;brush(p.x,p.z,radius,(i,w)=>{let dep=Math.min(Math.max(0,heights[i]-p.y+.045*s.scale),(.30+movement/Math.max(dt,.01)*.65)*dt*w/samples,Math.max(0,heights[i]+2.8),(capacity-soil)/(step*step));if(dep>0){change(i,heights[i]-dep);soil+=dep*step*step}})}
 }
 }
-previousTip=tooth.clone();carried.visible=bucket&&soil>capacity*.015;let fullness=Math.min(1,soil/capacity),bw=([.77,1.30,.38,0,0,.82][s.att]||.77);carried.scale.set(bw*.43,.025+.18*Math.cbrt(fullness),.30+.09*fullness);carried.position.y=-.14+.065*fullness;refreshTerrain();
+previousTip=tooth.clone();carried.visible=bucket&&soil>capacity*.015;let fullness=Math.min(1,soil/capacity),bw=([.77,1.30,.38,0,0,.82][s.att]||.77);carried.scale.set(bw*.43,.025+.18*Math.cbrt(fullness),.30+.09*fullness);carried.position.y=.14-.065*fullness;refreshTerrain();
 let info=bucket?'土量 '+Math.round(soil*1000)/1000+' / '+Math.round(capacity*1000)/1000+' m³':'掘削用バケットに交換';if(info!==lastSoilInfo){lastSoilInfo=info;document.getElementById('soilInfo').textContent=info}
 }
 let width=0,height=0;

@@ -533,7 +533,7 @@ function preCut(prev,next){
  // sliding on the belly may shave humps; it can never collect soil.
  const backFirst=p.backGap<=p.edgeGap+.015*next.scale&&p.backGap<.035*next.scale;
  const movingAgainstMouth=horiz>1e-7&&leading< -horiz*.15;
- const grading=backFirst||(p.backDown&&p.backGap<.06*next.scale&&p.edgeGap>p.backGap-.025*next.scale)||(movingAgainstMouth&&p.backGap<.07*next.scale);
+ const grading=backFirst||(p.backDown&&p.backGap<.06*next.scale&&p.edgeGap>p.backGap-.055*next.scale)||(movingAgainstMouth&&p.backGap<.07*next.scale);
  if(grading){
   const gx=p.back.x-old.back.x,gz=p.back.z-old.back.z,gy=p.back.y-old.back.y,slide=Math.hypot(gx,gz);
   if(p.backGap>-.16*next.scale&&slide>1e-6&&Math.abs(gy)<slide*1.1&&actuated){
@@ -554,7 +554,7 @@ function preCut(prev,next){
  let removed=0,swept=0,count=Math.min(6,Math.max(1,Math.ceil(travel/(step*.4))));
  for(let j=1;j<=count;j++){
   const q={...next};for(const key of ['x','z','yaw','swing','b','a','k'])q[key]=prev[key]+(next[key]-prev[key])*j/count;
-  const pt=contactProfile(q);if((pt.backGap<=pt.edgeGap+.015*q.scale&&pt.backGap<.035*q.scale)||(pt.backDown&&pt.backGap<.06*q.scale&&pt.edgeGap>pt.backGap-.025*q.scale)||pt.edgeGap>.025*q.scale)continue;
+  const pt=contactProfile(q);if((pt.backGap<=pt.edgeGap+.015*q.scale&&pt.backGap<.035*q.scale)||(pt.backDown&&pt.backGap<.06*q.scale&&pt.edgeGap>pt.backGap-.055*q.scale)||pt.edgeGap>.025*q.scale)continue;
   let penetration=0;for(let n=0;n<7;n++){const off=(n/6-.5)*width;penetration+=Math.max(0,heightAt(pt.lip.x+pt.axis.x*off,pt.lip.z+pt.axis.z*off)-pt.lip.y)}
   penetration/=7;if(penetration<.001*q.scale)continue;
   swept+=width*Math.max(0,intoMouth/count)*Math.min(penetration,.35*q.scale);
@@ -572,7 +572,7 @@ function resolveMotion(prev,next){
  if(keys.every(k=>Math.abs(next[k]-prev[k])<1e-9))return next;
  const before=soil,pendingBefore=pendingCut;
  const old=contactProfile(prev),target=contactProfile(next);
- const isGrading=!!(old&&target&&target.backGap<.07*next.scale&&target.backGap<=target.edgeGap+.02*next.scale&&Math.abs(next.a-prev.a)>1e-8);
+ const isGrading=!!(old&&target&&target.backGap<.07*next.scale&&target.backGap<=target.edgeGap+(target.backDown?.055:.02)*next.scale&&Math.abs(next.a-prev.a)>1e-8);
  // A shallow, moving heel may compact/shave soil. A stationary bucket is solid.
  const permitted=isGrading?.045*next.scale:0;
  function rollback(){

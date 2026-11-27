@@ -1,7 +1,5 @@
 name: EARTHWORK visual verification
 on:
-  push:
-    branches: [main, review/visual-check]
   workflow_dispatch:
 permissions:
   contents: read

@@ -47,6 +47,20 @@ function bucketSpec(s,att=s.att){
  const spec={att,W,D,H,shell,rim,lip,tip,gap,pin,thick,teeth:att===1?0:att===2?f[11]:att===5?f[12]:f[10],normalY:-dz/len,normalZ:dy/len};BUCKET_CACHE.set(key,spec);return spec;
 }
 
+
+// Closed four-bar linkage: bucket pin, rocker pivot, dogbone and rocker.
+// The two links retain fixed lengths for all bucket angles.
+function linkGeometry(s,k=s.k){
+ const q=bucketSpec(s),{A}=rig(s),r=q?Math.hypot(q.D*.23,q.H*.085):.187;
+ const pinY=q?-q.H*.085:-.05,pinZ=q?q.D*.23:.18;
+ const P={y:r*.60,z:A-r*1.10},Q={y:pinY*Math.cos(k)+pinZ*Math.sin(k),z:A-pinY*Math.sin(k)+pinZ*Math.cos(k)};
+ const d=Math.hypot(Q.y-P.y,Q.z-P.z),L1=r*1.10,L2=r*1.30;
+ const along=(L1*L1-L2*L2+d*d)/(2*d),perp=Math.sqrt(Math.max(0,L1*L1-along*along));
+ const uy=(Q.y-P.y)/d,uz=(Q.z-P.z)/d;
+ const C={y:P.y+uy*along-uz*perp,z:P.z+uz*along+uy*perp};
+ return {P,Q,C,L1,L2,d,valid:d<=L1+L2+1e-9&&d>=Math.abs(L1-L2)-1e-9};
+}
+
 function createWorld(canvas){
 const T=THREE, scene=new T.Scene(), renderer=new T.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'}), camera=new T.PerspectiveCamera(58,1,.04,450);
 renderer.setPixelRatio(Math.min(devicePixelRatio,1.6));renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.03;
@@ -119,12 +133,57 @@ for(const xx of [-.09,.10]){box(cab,steel,xx,.09,.45,.12,.055,.24);cyl(cab,steel
 const monitor=group(cab,.32,.64,.48);monitor.rotation.y=-.35;box(monitor,steel,0,0,0,.25,.20,.06);const displayCanvas=document.createElement('canvas');displayCanvas.width=256;displayCanvas.height=192;const dc=displayCanvas.getContext('2d'),displayTex=new T.CanvasTexture(displayCanvas);displayTex.colorSpace=T.SRGBColorSpace;const monitorFace=box(monitor,new T.MeshBasicMaterial({map:displayTex}),0,0,-.034,.22,.16,.006);let lastDisplay='';
 const mirrorArm=segment(cab,steel,.018);place(mirrorArm,v(.43,.92,.52),v(.65,.96,.66));box(cab,steel,.65,.96,.66,.15,.20,.045);box(cab,chrome,.65,.96,.63,.12,.17,.015);
 const boom=group(upper,.38,1.45,.55),arm=group(boom,0,0,2.25),tool=group(arm,0,0,1.65),boomVisual=group(boom),armVisual=group(arm);
-extrude(boomVisual,paint,[[0,-.16],[.53,-.11],[1.30,.10],[2.25,-.11],[2.25,.14],[1.28,.36],[.50,.24],[0,.17]],.30,0,0,0,.035);
-extrude(armVisual,paint,[[0,-.15],[1.55,-.11],[1.65,-.06],[1.65,.10],[.15,.22],[0,.15]],.23,0,0,0,.023);
+extrude(boomVisual,paint,[[0,-.16],[.22,-.20],[.48,-.18],[.79,-.06],[1.13,.075],[1.38,.09],[1.78,-.035],[2.12,-.115],[2.25,-.10],[2.25,.13],[2.09,.20],[1.77,.31],[1.43,.46],[1.19,.45],[.92,.36],[.53,.24],[.20,.18],[0,.17]],.30,0,0,0,.035);
+extrude(armVisual,paint,[[-.19,.07],[-.10,-.13],[.10,-.19],[.49,-.155],[1.17,-.105],[1.50,-.10],[1.65,-.075],[1.68,.055],[1.52,.105],[.85,.14],[.33,.24],[.05,.26],[-.14,.21]],.23,0,0,0,.023);
 for(const g of [boom,arm,tool]){cyl(g,steel,0,0,0,.14,.40,'x');for(const side of [-1,1])cyl(g,chrome,side*.215,0,0,.075,.025,'x')}
-function cylinder(parent,r){return [segment(parent,steel,r),segment(parent,chrome,r*.52)]}const lift=cylinder(upper,.085),stickCylinder=cylinder(boom,.065),bucketCylinder=cylinder(arm,.05);
+function cylinder(parent,r){return [segment(parent,steel,r),segment(parent,chrome,r*.52)]}
+
+// Hydraulic ram model: fixed barrel, independent piston rod, end-eye and gland.
+function realisticRam(parent,r){
+ const g=group(parent),body=segment(g,paint,r),rod=segment(g,chrome,r*.53),gland=segment(g,steel,r*1.045),baseEye=group(g),rodEye=group(g);
+ for(const [eye,rr] of [[baseEye,r*.81],[rodEye,r*.60]]){cyl(eye,paint,0,0,0,rr,r*1.5,'x');cyl(eye,steel,0,0,0,rr*.55,r*1.68,'x');for(const x of [-1,1])cyl(eye,chrome,x*r*.87,0,0,rr*.38,r*.13,'x')}
+ const ports=[];for(let i=0;i<2;i++){const p=group(g);cyl(p,steel,0,0,0,r*.22,r*.9,'x');ports.push(p)}
+ return {body,rod,gland,baseEye,rodEye,ports,r};
+}
+function placeRam(r,a,b,fixed){
+ const d=b.clone().sub(a),len=d.length(),axis=d.normalize(),bar=Math.min(fixed,Math.max(.02,len-r.r*.8)),end=a.clone().addScaledVector(axis,bar);
+ place(r.body,a,end);place(r.gland,end.clone().addScaledVector(axis,-r.r*.30),end.clone().addScaledVector(axis,r.r*.10));place(r.rod,end,b);
+ r.baseEye.position.copy(a);r.rodEye.position.copy(b);
+ r.ports[0].position.copy(a).addScaledVector(axis,bar*.17);r.ports[1].position.copy(a).addScaledVector(axis,bar*.88);
+}
+const lift=realisticRam(upper,.087),stickCylinder=realisticRam(boom,.067),bucketCylinder=realisticRam(arm,.052);
+const liftTwin=realisticRam(upper,.087);
+const rockerBars=[],dogBars=[],linkPins=[];
+for(const side of [-1,1]){rockerBars.push(segment(arm,paint,.034));dogBars.push(segment(arm,steel,.029))}
+for(let i=0;i<3;i++){const p=group(arm);cyl(p,steel,0,0,0,.059,.36,'x');for(const side of [-1,1]){cyl(p,paint,side*.142,0,0,.083,.055,'x');cyl(p,chrome,side*.178,0,0,.039,.016,'x')}linkPins.push(p)}
+function rotateYZ(y,z,angle){return [y*Math.cos(angle)+z*Math.sin(angle),-y*Math.sin(angle)+z*Math.cos(angle)]}
+function ramEnds(s,b=s.b,a=s.a,k=s.k){
+ const {B,A,X,Y,Z}=rig(s);
+ const [by,bz]=rotateYZ(-.15,B*.49,b),[ay,az]=rotateYZ(.21,-A*.13,a),link=linkGeometry(s,k);
+ return {liftA:[X,Y-.47,Z+.13],liftB:[X,Y+by,Z+bz],stickA:[0,.33,B*.26],stickB:[0,ay,B+az],bucketA:[0,.205,A*.12],bucketB:[0,link.C.y,link.C.z],link};
+}
+const ramLengths=new Map();
+function minRamLengths(s){
+ const key=machineProfile(s).id+':'+s.att;if(ramLengths.has(key))return ramLengths.get(key);
+ const mins=[Infinity,Infinity,Infinity];for(let b=-.25;b<=1.381;b+=.025){let e=ramEnds(s,b,-1.2,-.5);mins[0]=Math.min(mins[0],Math.hypot(...e.liftA.map((x,i)=>x-e.liftB[i])))}
+ for(let a=-2.4;a<=-.149;a+=.025){let e=ramEnds(s,.5,a,-.5);mins[1]=Math.min(mins[1],Math.hypot(...e.stickA.map((x,i)=>x-e.stickB[i])))}
+ for(let k=-1.8;k<=.651;k+=.025){let e=ramEnds(s,.5,-1.2,k);mins[2]=Math.min(mins[2],Math.hypot(...e.bucketA.map((x,i)=>x-e.bucketB[i])))}
+ const result=mins.map(x=>x*.82);ramLengths.set(key,result);return result;
+}
+function updateRams(s){
+ const {p,X}=rig(s),e=ramEnds(s),lengths=minRamLengths(s),{P,Q,C}=e.link;
+ const twin=p.nominal>=.45,spacing=.13;liftTwin.body.parent.visible=twin;
+ const la=v(...e.liftA),lb=v(...e.liftB);if(twin){la.x=X-spacing;lb.x=X-spacing;placeRam(liftTwin,v(X+spacing,la.y,la.z),v(X+spacing,lb.y,lb.z),lengths[0])}
+ placeRam(lift,la,lb,lengths[0]);placeRam(stickCylinder,v(...e.stickA),v(...e.stickB),lengths[1]);placeRam(bucketCylinder,v(...e.bucketA),v(...e.bucketB),lengths[2]);
+ const q=bucketSpec(s),offset=q?Math.max(.065,q.gap*.5+q.thick*1.3):.15;
+ for(let i=0;i<2;i++){const x=(i?1:-1)*offset;place(rockerBars[i],v(x,P.y,P.z),v(x,C.y,C.z));place(dogBars[i],v(x,C.y,C.z),v(x,Q.y,Q.z))}
+ [P,C,Q].forEach((p,i)=>linkPins[i].position.set(0,p.y,p.z));
+}
+
 function adjust(pair,a,b,f=.58){const mid=a.clone().lerp(b,f);place(pair[0],a,mid);place(pair[1],mid,b)}
-const hoses=[];for(let i=0;i<3;i++){const pts=[v(-.12+i*.065,.17,.05),v(-.12+i*.065,.36,.45),v(-.12+i*.065,.42,1.1),v(-.12+i*.065,.25,1.75),v(-.12+i*.065,.16,2.20)];const curve=new T.CatmullRomCurve3(pts);hoses.push(mesh(boomVisual,new T.TubeGeometry(curve,20,.019,6,false),rubber))}
+const hoses=[];for(let i=0;i<4;i++){const x=-.125+i*.080,pts=[v(x,.20,.08),v(x,.32,.45),v(x,.49,1.10),v(x,.51,1.38),v(x,.30,1.86),v(x,.20,2.20)];const curve=new T.CatmullRomCurve3(pts);hoses.push(mesh(boomVisual,new T.TubeGeometry(curve,32,.014,8,false),steel));for(const t of [.18,.42,.76]){let p=curve.getPoint(t);box(boomVisual,steel,p.x,p.y,p.z,.05,.032,.055)}}
+const flexHoses=[];for(let i=0;i<3;i++){const o=mesh(boom,new T.BufferGeometry(),rubber);flexHoses.push(o)}let lastHosePose='';
+function flexLines(s,B,A){const key=Math.round(s.a*80)+':'+Math.round(B*100);if(key===lastHosePose)return;lastHosePose=key;for(let i=0;i<flexHoses.length;i++){const x=-.085+i*.08;const [ey,ez]=rotateYZ(.23,A*.20,s.a);const curve=new T.CatmullRomCurve3([v(x,.20,B*.90),v(x,.30,B*.99),v(x,.31,B+.10),v(x,ey,B+ez)]);const o=flexHoses[i];o.geometry.dispose();o.geometry=new T.TubeGeometry(curve,14,.016,6,false)}}
 const tools=[];const worn=mat(0x777774,.54,.69),bucketSteel=mat(0x555653,.74,.56);
 function curvedPlate(p,points,w,m){const curve=new T.CatmullRomCurve3(points.map(([z,y])=>v(0,y,z)),false,'centripetal');let verts=[],ix=[],normals;const count=22;for(let j=0;j<=count;j++){let q=curve.getPoint(j/count);verts.push(-w/2,q.y,q.z,w/2,q.y,q.z)}for(let j=0;j<count;j++){let i=j*2;ix.push(i,i+1,i+2,i+1,i+3,i+2)}const geom=new T.BufferGeometry();geom.setAttribute('position',new T.Float32BufferAttribute(verts,3));geom.setIndex(ix);geom.computeVertexNormals();let mm=m.clone();mm.side=T.DoubleSide;return mesh(p,geom,mm)}
 // Build continuous thickness steel shell, not a solid block. All parts use the same physical profile.
@@ -438,7 +497,7 @@ if(profileKey!==p.id){profileKey=p.id;rebuildBuckets(s);lastFill=-1;lastFillTime
  cabShell.visible=!p.open;canopy.visible=p.open;
  boom.position.set(X,Y,Z);arm.position.z=B;tool.position.z=A;boomVisual.scale.z=B/2.25;armVisual.scale.z=A/1.65;
 }
-base.position.set(-s.x,heightAt(-s.x,s.z),s.z);base.rotation.y=-s.yaw;base.scale.set(-s.scale,s.scale,s.scale);upper.rotation.y=s.swing;boom.rotation.x=-s.b;arm.rotation.x=-s.a;tool.rotation.x=-s.k;tools.forEach((o,i)=>o.visible=i===s.att);applyHydraulic(s);chisel.position.z=.96;adjust(lift,v(X,Y-.32,Z+.21),v(X,Y+Math.sin(s.b)*B*.56,Z+Math.cos(s.b)*B*.56));adjust(stickCylinder,v(0,.23,B*.28),v(0,Math.sin(s.a)*A*.29,B+Math.cos(s.a)*A*.29));adjust(bucketCylinder,v(0,.15,A*.35),v(0,Math.sin(s.k)*.23,A+Math.cos(s.k)*.23));const inside=s.cab&&s.active;
+base.position.set(-s.x,heightAt(-s.x,s.z),s.z);base.rotation.y=-s.yaw;base.scale.set(-s.scale,s.scale,s.scale);upper.rotation.y=s.swing;boom.rotation.x=-s.b;arm.rotation.x=-s.a;tool.rotation.x=-s.k;tools.forEach((o,i)=>o.visible=i===s.att);applyHydraulic(s);chisel.position.z=.96;updateRams(s);flexLines(s,B,A);const inside=s.cab&&s.active;
 base.updateMatrixWorld(true);soilStep(s);const local=(p,g=upper)=>g.localToWorld(p);if(inside){camera.position.copy(local(v(-.04,.79,.04),cab));camera.lookAt(camera.position.clone().add(local(v(0,-.10,1),upper).sub(local(v(0,0,0),upper)).multiplyScalar(7)))}else{const distance=Math.max(6.8,p.boom+p.arm+1.5)/sc;camera.position.copy(local(v(-distance*.85,distance*.58,distance*.94),base));camera.lookAt(local(v(s.active?0:2.1/sc,p.height*.48/sc,p.boom*.35/sc),base))}camera.updateMatrixWorld();sun.position.set(-s.x-18,28,s.z+12);sun.target.position.set(-s.x,0,s.z);
 const status=s.engine+'/'+s.unlocked;if(status!==lastDisplay){lastDisplay=status;dc.fillStyle='#14201c';dc.fillRect(0,0,256,192);dc.fillStyle=s.engine?'#a0e6a4':'#8a9993';dc.font='bold 23px monospace';dc.fillText(s.engine?'ENGINE ON':'STANDBY',15,40);dc.font='19px monospace';dc.fillText(s.unlocked?'HYD READY':'LOCKED',15,79);dc.fillStyle='#64746a';dc.fillRect(15,112,226,18);dc.fillStyle='#d3ba65';dc.fillRect(15,112,s.engine?155:10,18);dc.font='15px monospace';dc.fillText('FUEL    TEMP',15,155);displayTex.needsUpdate=true}
 renderer.render(scene,camera)}

@@ -57,7 +57,10 @@ box(upper,steel,0,1.01,-.35,1.98,.12,2.1);box(upper,paint,.61,1.91,-.60,.67,.22,
 box(cab,inner,0,.03,0,.91,.12,1.36);box(cab,paint,0,1.16,-.02,.98,.11,1.42);box(cab,steel,0,1.09,.02,.92,.045,1.32);
 for(const xx of [-.43,.43])for(const zz of [-.61,.61])box(cab,steel,xx,.60,zz,.075,1.1,.075);
 for(const xx of [-.43,.43]){box(cab,steel,xx,.14,0,.065,.09,1.25);box(cab,steel,xx,1.06,0,.065,.06,1.25);box(cab,glass,xx,.60,0,.012,.91,1.16)}
-box(cab,glass,0,.60,.61,.82,.91,.012);box(cab,glass,0,.60,-.61,.82,.91,.012);box(cab,steel,0,.22,.61,.84,.06,.065);box(cab,rubber,-.43,.60,.36,.022,.91,.032);box(cab,steel,-.44,.54,.05,.035,.04,.17);const wiper=segment(cab,rubber,.009);place(wiper,v(-.32,.24,.60),v(.13,.87,.60));const blade=segment(cab,rubber,.013);place(blade,v(-.04,.55,.615),v(.24,.92,.615));for(let i=0;i<5;i++)box(cab,rubber,0,.087,.10+i*.065,.42,.012,.021);
+box(cab,glass,0,.60,.61,.82,.91,.012);box(cab,glass,0,.60,-.61,.82,.91,.012);box(cab,steel,0,.22,.61,.84,.06,.065);box(cab,rubber,-.43,.60,.36,.022,.91,.032);box(cab,steel,-.44,.54,.05,.035,.04,.17);// Park the front wiper against the outside lower window edge.
+const wiperPivot=cyl(cab,steel,-.31,.27,.64,.018,.018,'z');
+const wiper=segment(cab,rubber,.005);place(wiper,v(-.31,.27,.646),v(.03,.30,.646));
+const blade=segment(cab,rubber,.007);place(blade,v(-.12,.305,.65),v(.33,.345,.65));for(let i=0;i<5;i++)box(cab,rubber,0,.087,.10+i*.065,.42,.012,.021);
 box(cab,seatMat,-.04,.23,-.13,.51,.18,.54);const back=box(cab,seatMat,-.04,.54,-.39,.49,.56,.13);back.rotation.x=-.10;box(cab,seatMat,-.04,.84,-.43,.31,.18,.13);
 for(const xx of [-.30,.29]){box(cab,inner,xx,.30,.03,.16,.34,.53);box(cab,seatMat,xx,.50,-.09,.16,.08,.36);cyl(cab,rubber,xx,.57,.20,.045,.16);box(cab,rubber,xx,.67,.20,.10,.12,.085)}
 for(const xx of [-.09,.10]){box(cab,steel,xx,.09,.45,.12,.055,.24);cyl(cab,steel,xx,.24,.49,.018,.28);box(cab,rubber,xx,.39,.49,.075,.09,.055)}
@@ -72,12 +75,31 @@ function adjust(pair,a,b,f=.58){const mid=a.clone().lerp(b,f);place(pair[0],a,mi
 const hoses=[];for(let i=0;i<3;i++){const pts=[v(-.12+i*.065,.17,.05),v(-.12+i*.065,.36,.45),v(-.12+i*.065,.42,1.1),v(-.12+i*.065,.25,1.75),v(-.12+i*.065,.16,2.20)];const curve=new T.CatmullRomCurve3(pts);hoses.push(mesh(boom,new T.TubeGeometry(curve,20,.019,6,false),rubber))}
 const tools=[];const worn=mat(0x777774,.54,.69),bucketSteel=mat(0x555653,.74,.56);
 function curvedPlate(p,points,w,m){const curve=new T.CatmullRomCurve3(points.map(([z,y])=>v(0,y,z)),false,'centripetal');let verts=[],ix=[],normals;const count=22;for(let j=0;j<=count;j++){let q=curve.getPoint(j/count);verts.push(-w/2,q.y,q.z,w/2,q.y,q.z)}for(let j=0;j<count;j++){let i=j*2;ix.push(i,i+1,i+2,i+1,i+3,i+2)}const geom=new T.BufferGeometry();geom.setAttribute('position',new T.Float32BufferAttribute(verts,3));geom.setIndex(ix);geom.computeVertexNormals();let mm=m.clone();mm.side=T.DoubleSide;return mesh(p,geom,mm)}
-function bucket(w,teeth,skeleton=false){const g=group(tool);const profile=[[-.10,.04],[.02,.23],[.19,.35],[.35,.38],[.51,.36],[.65,.29],[.79,.18]],shape=[...profile,[.16,-.13]];for(const side of [-1,1]){extrude(g,bucketSteel,shape,.048,side*(w/2-.024),0,0,.012);const rim=segment(g,worn,.018);place(rim,v(side*w*.5,-.13,.16),v(side*w*.5,.18,.79))}
-if(skeleton){for(let j=0;j<8;j++){const xx=(j-3.5)*w/8;const rib=curvedPlate(g,profile,.038,bucketSteel);rib.position.x=xx}}else curvedPlate(g,profile,w,bucketSteel);
-box(g,bucketSteel,0,-.085,.12,.30,.14,.24);box(g,worn,0,.18,.79,w,.055,.12);
-for(let j=0;j<4;j++){let xx=(j-1.5)*w/4;let strip=curvedPlate(g,[[.06,.25],[.19,.37],[.35,.40],[.51,.38],[.65,.31]],.055,worn);strip.position.x=xx}
-for(let i=0;i<teeth;i++){let xx=(i-(teeth-1)/2)*w/(teeth+.5);box(g,bucketSteel,xx,.19,.80,.10,.105,.15);extrude(g,worn,[[.76,.15],[.78,.27],[.97,.26],[.91,.20],[.82,.16]],.075,xx,0,0,.008)}
-for(const xx of [-.15,.15]){extrude(g,bucketSteel,[[-.08,-.04],[.18,-.12],[.28,.04],[.07,.13]],.055,xx,0,0,.015);cyl(g,worn,xx,.015,.03,.065,.075,'x')}
+function bucket(w,teeth,skeleton=false){
+const g=group(tool);
+const profile=[[-.09,.035],[.025,.19],[.16,.32],[.32,.39],[.49,.38],[.63,.31],[.74,.23],[.79,.18]];
+// Continuous curved back and open mouth; the side plates taper toward the lip.
+const shape=[...profile,[.69,.12],[.49,.015],[.25,-.075],[.12,-.095]];
+for(const side of [-1,1]){
+ extrude(g,bucketSteel,shape,.038,side*(w/2-.019),0,0,.009);
+ const rim=segment(g,worn,.010);place(rim,v(side*w*.5,-.095,.12),v(side*w*.5,.18,.79));
+}
+if(skeleton){for(let j=0;j<8;j++){let rib=curvedPlate(g,profile,.032,bucketSteel);rib.position.x=(j-3.5)*w/8}}
+else {curvedPlate(g,profile,w,bucketSteel);curvedPlate(g,profile.map(([z,y])=>[z,y-.018]),w-.05,worn)}
+box(g,bucketSteel,0,-.065,.065,Math.min(.30,w*.78),.11,.18);
+const lip=box(g,worn,0,.18,.79,w,.045,.10);lip.rotation.x=.23;
+for(let j=0;j<(skeleton?0:3);j++){let strip=curvedPlate(g,[[.05,.23],[.17,.345],[.32,.41],[.49,.40],[.62,.335]],.047,worn);strip.position.x=(j-1)*w/3}
+for(let i=0;i<teeth;i++){
+ const xx=(i-(teeth-1)/2)*w/(teeth+.5);
+ box(g,bucketSteel,xx,.19,.80,.085,.070,.115);
+ // tapered tooth: broad adapter, narrow cutting tip
+ const vertices=[-.045,.15,.78,.045,.15,.78,.045,.23,.78,-.045,.23,.78,-.019,.25,.97,.019,.25,.97,.019,.265,.97,-.019,.265,.97];
+ const geom=new T.BufferGeometry();geom.setAttribute('position',new T.Float32BufferAttribute(vertices,3));geom.setIndex([0,2,1,0,3,2,4,5,6,4,6,7,0,1,5,0,5,4,3,7,6,3,6,2,0,4,7,0,7,3,1,2,6,1,6,5]);geom.computeVertexNormals();mesh(g,geom,worn,xx,0,0);
+}
+for(const xx of [-.15,.15]){
+ extrude(g,bucketSteel,[[-.08,-.04],[.18,-.12],[.28,.04],[.07,.13]],.052,xx,0,0,.011);
+ cyl(g,worn,xx,.015,.03,.065,.075,'x');
+}
 return g}
 tools[0]=bucket(.77,5);tools[1]=bucket(1.30,0);tools[2]=bucket(.38,3);const breaker=group(tool);box(breaker,steel,0,0,.44,.30,.34,.92);box(breaker,paint,0,.03,.38,.32,.23,.64);cyl(breaker,chrome,0,0,1.02,.045,.46,'z');tools[3]=breaker;const fork=group(tool);box(fork,steel,0,0,.14,.86,.16,.18);for(const side of [-1,1])box(fork,steel,side*.27,-.12,.55,.11,.09,.91);tools[4]=fork;tools[5]=bucket(.82,5,true);const jaws=[];for(let i=6;i<=7;i++){const g=group(tool),pair=[];box(g,steel,0,0,.16,.48,.30,.37);for(const side of [-1,1]){let j=group(g,side*.17,0,.26);extrude(j,steel,[[0,-.12],[.52,-.15],[.68,.03],[.42,.16],[0,.12]],.13,0,0,0,.02);pair.push(j)}jaws.push(pair);tools[i]=g}
 

@@ -160,7 +160,7 @@ function collisionDepth(s,cutting){
 }
 function resolveMotion(prev,next){
  if(!next.active||!next.engine||!next.unlocked)return next;
- const bw=bucketWidths[next.att],cutting=!!bw&&soil<(next.capacity||.25)*([1,1.15,.55,0,0,.8,0,0][next.att]||1)&&scoopTravel(next.b,next.a,next.k,prev.a,prev.k,next.att===1?.18:.26,next.att===1?.79:.97)>1e-8;
+ const bw=bucketWidths[next.att],cutting=!!bw&&scoopTravel(next.b,next.a,next.k,prev.a,prev.k,next.att===1?.18:.26,next.att===1?.79:.97)>1e-8;
  const baseline=collisionDepth(prev,cutting),limit=baseline+.00002;
  if(collisionDepth(next,cutting)<=limit)return next;
  const keys=['x','z','yaw','swing','b','a','k'];let lo=0,hi=1;
@@ -170,6 +170,38 @@ function resolveMotion(prev,next){
  accepted.contact=true;return accepted;
 }
 
+
+function edgeWeights(cx,cz,ax,az,width,depth){
+ const reach=Math.hypot(width*.5,depth*.5)+step;
+ let cells=[],total=0;
+ brush(cx,cz,reach,(i)=>{
+  const rx=pos.getX(i)-cx,rz=pos.getZ(i)-cz;
+  const along=Math.abs(rx*ax+rz*az),forward=Math.abs(-rx*az+rz*ax);
+  const weight=Math.max(0,Math.min(1,(width*.5+step*.55-along)/step))*Math.max(0,Math.min(1,(depth*.5+step*.55-forward)/step));
+  if(weight>0){cells.push([i,weight]);total+=weight}
+ });
+ return {cells,total};
+}
+function cutEdge(center,axis,width,travel,scale,bite){
+ let penetration=0;
+ for(let j=0;j<5;j++){const off=(j/4-.5)*width;penetration+=Math.max(0,heightAt(center.x+axis.x*off,center.z+axis.z*off)-center.y-bite)}
+ penetration/=5;if(penetration<=0||travel<=0)return 0;
+ const {cells,total}=edgeWeights(center.x,center.z,axis.x,axis.z,width,Math.max(step*.55,travel));
+ if(!total)return 0;
+ const target=width*travel*Math.min(penetration,.22*scale)*.94;
+ let removed=0;
+ for(const [i,w] of cells){const available=Math.max(0,heights[i]-center.y-bite);const dep=Math.min(available,target*w/total/(step*step),Math.max(0,heights[i]+2.8));if(dep>0){change(i,heights[i]-dep);removed+=dep*step*step}}
+ return removed;
+}
+function retainedFraction(ny,nz){
+ const mouthUp=-.9*ny+.44*nz;
+ if(mouthUp>=.10)return 1;
+ const repose=Math.min(.50,Math.max(0,.48*(1+mouthUp)));
+ const ey=ny-.9*repose,ez=nz+.44*repose;
+ const lip1=cavity[cavity.length-1],lip2=cavity[cavity.length-2];
+ const level=Math.min(lip1[1]*ey+lip1[0]*ez,lip2[1]*ey+lip2[0]*ez);
+ return Math.max(0,Math.min(1,area(clipFill(cavity,ey,ez,level))/area(cavity)));
+}
 function soilStep(s){
 const dt=Math.max(0,Math.min(.075,s.dt||0));const bucket=[0,1,2,5].includes(s.att),capacity=Math.max(.01,(s.capacity||.25)*([1,1.15,.55,0,0,.8,0,0][s.att]||1));
 const tipY=s.att===1?.18:.26,tipZ=s.att===1?.79:.97;
@@ -181,25 +213,32 @@ const displacement=previousTip?tooth.clone().sub(previousTip):v(0,0,0);
 const movement=displacement.length(),cutTravel=Math.min(scoop,Math.max(0,displacement.dot(mouth)));
 previousK=s.k;previousA=s.a;
 if(s.active&&s.engine&&s.unlocked&&bucket&&dt>0){
-const width=([.77,1.30,.38,0,0,.82][s.att]||.77)*s.scale, radius=Math.max(step*.95,width*.57);
-const surface=heightAt(tooth.x,tooth.z),bw=width/s.scale;
-const isCutting=cutTravel>1e-7&&tooth.y<surface-.035*s.scale&&dk<=.00005;
-const canSpill=mouth.y<-.18&&tooth.y>surface+.12;
+const bw=bucketWidths[s.att],width=bw*s.scale,radius=Math.max(step*1.2,width*.55);
+const surface=heightAt(tooth.x,tooth.z),angle=s.b+s.a+s.k;
+const axis=tool.localToWorld(v(1,0,0)).sub(tool.localToWorld(v(0,0,0)));axis.y=0;axis.normalize();
+const isCutting=previousTip&&cutTravel>1e-7&&dk<=.00005&&tooth.y<surface+.025*s.scale;
+const stableVolume=capacity*retainedFraction(Math.cos(angle),Math.sin(angle));
+const canSpill=mouth.y<-.10&&tooth.y>surface+.08;
 spillDelay=canSpill&&!isCutting?spillDelay+dt:0;
-dumping=soil>0&&canSpill&&(dk>0.00005||spillDelay>.40);
-if(dumping){const amount=Math.min(soil,capacity*dt*(.22+Math.max(0,-mouth.y)*1.5));soil-=launchDrops(amount,bw,s,capacity)}
-else if(soil<capacity&&previousTip&&cutTravel>1e-7&&dk<=.00005){
- // A genuine cut needs a submerged cutting edge and movement into the bucket mouth.
- // No soil is loaded from vertical boom contact, swing, travel, opening, or a stationary bucket.
- const before=soil,bite=.018*s.scale;let displaced=0;
- const samples=Math.min(12,Math.max(1,Math.ceil(movement/(step*.45))));
+dumping=soil>stableVolume+.00001&&canSpill&&!isCutting&&(dk>0.00005||spillDelay>.18);
+if(dumping){const amount=Math.min(soil-stableVolume,capacity*dt*(.3+Math.max(0,-mouth.y)*1.6));soil-=launchDrops(amount,bw,s,capacity)}
+if(isCutting){
+ const before=soil,bite=.012*s.scale;let displaced=0;
+ const samples=Math.min(12,Math.max(1,Math.ceil(movement/(step*.35))));
  for(let j=1;j<=samples;j++){
-  const p=previousTip.clone().lerp(tooth,j/samples),penetration=heightAt(p.x,p.z)-p.y;
-  if(penetration<=bite)continue;
-  const budget=cutTravel/samples*.85*Math.min(1,(penetration-bite)/(.12*s.scale));
-  brush(p.x,p.z,radius,(i,w)=>{const dep=Math.min(Math.max(0,heights[i]-p.y-bite),budget*w,Math.max(0,heights[i]+2.8),(capacity-soil)/(step*step));if(dep>0){change(i,heights[i]-dep);const volume=dep*step*step;soil+=volume*.84;displaced+=volume*.16}});
+  const p=previousTip.clone().lerp(tooth,j/samples);
+  const volume=cutEdge(p,axis,width,cutTravel/samples,s.scale,bite);
+  const collected=Math.min(Math.max(0,capacity-soil),volume*.88);
+  soil+=collected;displaced+=volume-collected;
+ }
+ if(displaced>0){
+  const side=axis.clone().multiplyScalar(width*.62);
+  for(const sign of [-1,1]){
+   const p=tooth.clone().addScaledVector(side,sign);
+   if(!deposit(p.x,p.z,displaced*.5,Math.max(step*1.4,width*.37)))deposit(tooth.x,tooth.z,displaced*.5,radius);
   }
- if(displaced>0){const horizontal=Math.hypot(mouth.x,mouth.z);const offset=radius*.95;let xx=tooth.x+(horizontal>.05?mouth.x/horizontal:0)*offset,zz=tooth.z+(horizontal>.05?mouth.z/horizontal:1)*offset;if(!deposit(xx,zz,displaced,Math.max(step*1.25,radius*.8)))soil+=displaced;}spawnIntake(soil-before,bw,s.scale,capacity,tipY,tipZ);
+ }
+ spawnIntake(soil-before,bw,s.scale,capacity,tipY,tipZ);
 }
 }
 previousTip=tooth.clone();

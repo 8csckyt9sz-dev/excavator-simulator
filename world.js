@@ -27,7 +27,7 @@ const FITS=[
 ];
 const FORMS={
  0:{shell:[[.12,-.15],[.055,.04],[.065,.23],[.18,.43],[.34,.54],[.53,.55],[.69,.48],[.82,.34],[.90,.24]],rim:[[.12,-.15],[.36,-.105],[.62,.025],[.90,.24]],tip:[.24,1.055]},
- 1:{shell:[[.10,-.12],[.06,.02],[.09,.20],[.22,.33],[.38,.36],[.56,.31],[.68,.24],[.78,.18]],rim:[[.10,-.12],[.34,-.07],[.58,.07],[.78,.18]],tip:[.18,.84]},
+ 1:{shell:[[.10,-.12],[.035,.015],[.045,.16],[.12,.27],[.22,.33],[.34,.345],[.49,.31],[.63,.255],[.75,.205],[.78,.193]],rim:[[.10,-.12],[.30,-.105],[.56,.012],[.78,.193]],tip:[.177,.84]},
  2:{shell:[[.12,-.15],[.045,.05],[.07,.27],[.21,.50],[.39,.60],[.57,.59],[.73,.47],[.86,.32],[.93,.24]],rim:[[.12,-.15],[.38,-.10],[.68,.055],[.93,.24]],tip:[.24,1.08]},
  5:{shell:[[.12,-.15],[.065,.04],[.08,.23],[.22,.44],[.39,.53],[.56,.53],[.72,.44],[.86,.30],[.91,.24]],rim:[[.12,-.15],[.40,-.10],[.68,.06],[.91,.24]],tip:[.24,1.055]}
 };
@@ -48,7 +48,7 @@ function bucketSpec(s,att=s.att){
  const spec={att,W,D,H,shell,rim,lip,tip,gap,pin,thick,teeth:att===1?0:att===2?f[11]:att===5?f[12]:f[10],normalY:-dz/len,normalZ:dy/len};
  if(att===0||att===2){
   const zScale=D/1.39253,yScale=H/1.15;
-  spec.cad=true;spec.cadZ=zScale;spec.cadY=yScale;spec.cadX=W/1.13;
+  spec.cad=true;spec.cadZ=zScale;spec.cadY=yScale;spec.cadX=W/1.13;spec.pinHalf=Math.min(W*.43,gap/2+thick*2.2);
   spec.shell=CAD_BUCKET_SHELL.map(([z,y])=>[z*zScale,y*yScale]);spec.lip=spec.shell[spec.shell.length-1];
   spec.rim=[spec.shell[0],spec.lip];spec.tip=[.32515*yScale,1.39253*zScale];spec.pin2Y=.40597*yScale;spec.pin2Z=-.18838*zScale;
   const dy=spec.lip[1]-spec.rim[0][1],dz=spec.lip[0]-spec.rim[0][0],len=Math.hypot(dy,dz);spec.normalY=-dz/len;spec.normalZ=dy/len;
@@ -142,7 +142,7 @@ for(let y=0;y<512;y++)for(let x=0;x<512;x++){let n=layers.reduce((v,l,i)=>v+(noi
 const terrainSize=44, subdivisions=176, step=terrainSize/subdivisions, half=terrainSize/2, stride=subdivisions+1;
 const geo=new T.PlaneGeometry(terrainSize,terrainSize,subdivisions,subdivisions);geo.rotateX(-Math.PI/2);
 const pos=geo.attributes.position, initial=new Float32Array(pos.count), heights=new Float32Array(pos.count), colors=new Float32Array(pos.count*3);
-const soilColor=new T.Color(), cDry=new T.Color(0xe0cbb1),cWet=new T.Color(0x74604a),cFresh=new T.Color(0xa1825d);
+const soilColor=new T.Color(), cDry=new T.Color(0xf1e6d6),cWet=new T.Color(0x74604a),cFresh=new T.Color(0xa1825d);
 function paintVertex(i){const delta=heights[i]-initial[i], variation=.92+.08*Math.sin(i*17.17);soilColor.copy(cDry).lerp(delta<0?cWet:cFresh,Math.min(.8,Math.abs(delta)*2.4)).multiplyScalar(variation);colors.set([soilColor.r,soilColor.g,soilColor.b],i*3)}
 for(let i=0;i<pos.count;i++){let xx=pos.getX(i),zz=pos.getZ(i);let fade=Math.min(1,Math.max(0,(half-Math.max(Math.abs(xx),Math.abs(zz)))/3));let y=(Math.sin(xx*.38)*Math.cos(zz*.32)*.085+Math.sin(xx*1.4+zz*.7)*.025)*fade;initial[i]=heights[i]=y;pos.setY(i,y);paintVertex(i)}
 geo.setAttribute('color',new T.BufferAttribute(colors,3));geo.computeVertexNormals();geo.computeBoundingSphere();geo.boundingSphere.radius+=5;
@@ -154,8 +154,8 @@ if(typeof EARTH_PHOTOS!=='undefined'){
  const loader=new T.TextureLoader();
  const load=(src)=>new Promise((resolve,reject)=>loader.load(src,resolve,undefined,reject));
  photoAssetsReady=Promise.all([load(EARTH_PHOTOS.ground),load(EARTH_PHOTOS.sky)]).then(([g,sky])=>{
-  g.colorSpace=T.SRGBColorSpace;g.wrapS=g.wrapT=T.RepeatWrapping;g.repeat.set(terrainSize/2.5,terrainSize/2.5);g.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());
-  const bump=g.clone();bump.colorSpace=T.NoColorSpace;bump.needsUpdate=true;groundMaterial.map=g;groundMaterial.bumpMap=bump;groundMaterial.bumpScale=.037;groundMaterial.needsUpdate=true;
+  g.colorSpace=T.SRGBColorSpace;g.wrapS=g.wrapT=T.RepeatWrapping;g.repeat.set(terrainSize/1.7,terrainSize/1.7);g.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());
+  const bump=g.clone();bump.colorSpace=T.NoColorSpace;bump.needsUpdate=true;groundMaterial.map=g;groundMaterial.bumpMap=bump;groundMaterial.bumpScale=.019;groundMaterial.needsUpdate=true;
   sky.colorSpace=T.SRGBColorSpace;sky.mapping=T.EquirectangularReflectionMapping;const gen=new T.PMREMGenerator(renderer);const target=gen.fromEquirectangular(sky);scene.environment=target.texture;scene.background=sky;gen.dispose();return true;
  }).catch(()=>false);
 }
@@ -201,7 +201,7 @@ const blade=segment(cabShell,rubber,.007);place(blade,v(-.12,.305,.65),v(.33,.34
 box(cab,seatMat,-.04,.23,-.13,.51,.18,.54);const back=box(cab,seatMat,-.04,.54,-.39,.49,.56,.13);back.rotation.x=-.10;box(cab,seatMat,-.04,.84,-.43,.31,.18,.13);
 for(const xx of [-.30,.29]){box(cab,inner,xx,.30,.03,.16,.34,.53);box(cab,seatMat,xx,.50,-.09,.16,.08,.36);cyl(cab,rubber,xx,.57,.20,.045,.16);box(cab,rubber,xx,.67,.20,.10,.12,.085)}
 for(const xx of [-.09,.10]){box(cab,steel,xx,.09,.45,.12,.055,.24);cyl(cab,steel,xx,.24,.49,.018,.28);box(cab,rubber,xx,.39,.49,.075,.09,.055)}
-const monitor=group(cab,.32,.64,.48);monitor.rotation.y=-.35;box(monitor,steel,0,0,0,.25,.20,.06);const displayCanvas=document.createElement('canvas');displayCanvas.width=256;displayCanvas.height=192;const dc=displayCanvas.getContext('2d'),displayTex=new T.CanvasTexture(displayCanvas);displayTex.colorSpace=T.SRGBColorSpace;displayTex.repeat.x=-1;displayTex.offset.x=1;const monitorFace=box(monitor,new T.MeshBasicMaterial({map:displayTex}),0,0,-.034,.22,.16,.006);let lastDisplay='';
+const monitor=group(cab,.36,.55,.62);monitor.rotation.y=-.22;monitor.scale.setScalar(.76);box(monitor,steel,0,0,0,.25,.20,.06);const displayCanvas=document.createElement('canvas');displayCanvas.width=256;displayCanvas.height=192;const dc=displayCanvas.getContext('2d'),displayTex=new T.CanvasTexture(displayCanvas);displayTex.colorSpace=T.SRGBColorSpace;displayTex.repeat.x=-1;displayTex.offset.x=1;const monitorFace=box(monitor,new T.MeshBasicMaterial({map:displayTex}),0,0,-.034,.22,.16,.006);let lastDisplay='';
 const mirrorArm=segment(cab,steel,.018);place(mirrorArm,v(.43,.92,.52),v(.65,.96,.66));box(cab,steel,.65,.96,.66,.15,.20,.045);box(cab,chrome,.65,.96,.63,.12,.17,.015);
 
 // Independent cab and upper-frame assemblies imported from the original CAD.
@@ -317,7 +317,7 @@ function updateRams(s){
  const twin=p.nominal>=.45,spacing=.13;liftTwin.body.parent.visible=twin;
  const la=v(...e.liftA),lb=v(...e.liftB);if(twin){la.x=X-spacing;lb.x=X-spacing;placeRam(liftTwin,v(X+spacing,la.y,la.z),v(X+spacing,lb.y,lb.z),lengths[0])}
  placeRam(lift,la,lb,lengths[0]);placeRam(stickCylinder,v(...e.stickA),v(...e.stickB),lengths[1]);placeRam(bucketCylinder,v(...e.bucketA),v(...e.bucketB),lengths[2]);
- const q=bucketSpec(s),offset=q?Math.max(.065,q.cad?.215*q.cadX:q.gap*.5+q.thick*1.3):.15;
+ const q=bucketSpec(s),offset=q?Math.max(.065,q.cad?q.pinHalf:q.gap*.5+q.thick*1.3):.15;
  for(let i=0;i<2;i++){const x=(i?1:-1)*offset;place(rockerBars[i],v(x,P.y,P.z),v(x,C.y,C.z));place(dogBars[i],v(x,C.y,C.z),v(x,Q.y,Q.z))}
  [P,C,Q].forEach((p,i)=>linkPins[i].position.set(0,p.y,p.z));
 }
@@ -330,7 +330,7 @@ const tools=[];const worn=weathered(mat(0x777774,.46,.73),1),bucketSteel=weather
 function curvedPlate(p,points,w,m){const curve=new T.CatmullRomCurve3(points.map(([z,y])=>v(0,y,z)),false,'centripetal');let verts=[],ix=[],normals;const count=22;for(let j=0;j<=count;j++){let q=curve.getPoint(j/count);verts.push(-w/2,q.y,q.z,w/2,q.y,q.z)}for(let j=0;j<count;j++){let i=j*2;ix.push(i,i+1,i+2,i+1,i+3,i+2)}const geom=new T.BufferGeometry();geom.setAttribute('position',new T.Float32BufferAttribute(verts,3));geom.setIndex(ix);geom.computeVertexNormals();let mm=m.clone();mm.side=T.DoubleSide;return mesh(p,geom,mm)}
 // Build continuous thickness steel shell, not a solid block. All parts use the same physical profile.
 function cadBucket(spec){
- const g=group(tool),C=Math.cos(.9),S=Math.sin(.9),tf=(x,y,z)=>{let yy=z+.41007984,zz=1.12030852-y;return [x*spec.cadX,(yy*C+zz*S)*spec.cadY,(zz*C-yy*S)*spec.cadZ]};
+ const g=group(tool),C=Math.cos(.9),S=Math.sin(.9),mapX=x=>{const d=Math.abs(x),v=d<=.215?d/.215*spec.pinHalf:spec.pinHalf+(d-.215)/(.565-.215)*(spec.W/2-spec.pinHalf);return Math.sign(x)*v},tf=(x,y,z)=>{let yy=z+.41007984,zz=1.12030852-y;return [mapX(x),(yy*C+zz*S)*spec.cadY,(zz*C-yy*S)*spec.cadZ]};
  for(const i of [0,1,2])cadMesh(g,'bucket',i,tf,i===0?bucketSteel:worn);
  // Side cutters in their original assembled CAD coordinate system.
  for(const [idx,tx,ty,tz] of [[3,-.39529881,.545,-1.06852674],[4,-.39529881,-.545,-1.06852674]])cadMesh(g,'bucket',idx,(x,y,z)=>tf(x+ty,y+tz+1.12030852,z+tx-.41007984),worn);
@@ -368,7 +368,7 @@ function bucket(spec){
  // Reinforced transverse header, lip, replaceable ground-engaging teeth.
  const top=rim[0];box(g,backMat,0,top[1]+spec.H*.10,top[0]+spec.D*.025,w,thick*3.2,spec.D*.12);
  const edgeLength=att===1?spec.D*.14:spec.D*.095;
- box(g,worn,0,lip[1],lip[0]+edgeLength*.22,w,thick*2.0,edgeLength);
+ if(att===1){const z=lip[0],y=lip[1];extrude(g,worn,[[z-edgeLength*.45,y-thick],[z+edgeLength*.68,spec.tip[0]],[z+edgeLength*.25,y+thick*.9],[z-edgeLength*.45,y+thick*.9]],w,0,0,0,thick*.1);for(let i=0;i<Math.max(6,Math.round(w/.14));i++){const n=Math.max(6,Math.round(w/.14)),x=(i-(n-1)/2)*w/n;cyl(g,steel,x,y+thick*.8,z-edgeLength*.12,thick*.52,thick*.65)}}else box(g,worn,0,lip[1],lip[0]+edgeLength*.22,w,thick*2.0,edgeLength);
  if(!skeleton){const strips=att===1?4:3;for(let i=0;i<strips;i++){const part=curvedPlate(g,shell.slice(3,-1).map(([z,y])=>[z,y+thick*1.1]),Math.max(thick*2,w*.075),worn);part.position.x=(i-(strips-1)/2)*w/(strips+.3)}}
  for(let i=0;i<teeth;i++){
   const x=(i-(teeth-1)/2)*w/(teeth+.18),tw=Math.min(w/(teeth+1)*.72,spec.D*.105),z0=lip[0]-spec.D*.065,z1=tip[1],y0=lip[1],y1=tip[0],th=thick*2.4;
@@ -644,6 +644,16 @@ let info=bucket?'土量 '+Math.round(soil*1000)/1000+' / '+Math.round(capacity*1
 }
 let width=0,height=0,profileKey='';
 
+// Fit the entire visible machine, including whichever attachment is selected.
+const exteriorBounds=new T.Box3(),tempBounds=new T.Box3();
+function fitExteriorCamera(s){
+ exteriorBounds.makeEmpty();base.traverseVisible(o=>{if(!o.isMesh||!o.geometry||o.count===0)return;if(o.isInstancedMesh){if(!o.boundingBox)o.computeBoundingBox();if(o.boundingBox)exteriorBounds.union(tempBounds.copy(o.boundingBox).applyMatrix4(o.matrixWorld));return}if(!o.geometry.boundingBox)o.geometry.computeBoundingBox();if(o.geometry.boundingBox)exteriorBounds.union(tempBounds.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld))});
+ if(exteriorBounds.isEmpty())return;
+ const target=exteriorBounds.getCenter(v(0,0,0)),dir=base.localToWorld(v(-.84,.52,.76)).sub(base.localToWorld(v(0,0,0))).normalize(),right=v(0,1,0).cross(dir).normalize(),up=dir.clone().cross(right).normalize(),tanV=Math.tan(camera.fov*Math.PI/360),tanH=tanV*camera.aspect;
+ let distance=1;for(const x of [exteriorBounds.min.x,exteriorBounds.max.x])for(const y of [exteriorBounds.min.y,exteriorBounds.max.y])for(const z of [exteriorBounds.min.z,exteriorBounds.max.z]){const d=v(x,y,z).sub(target);distance=Math.max(distance,d.dot(dir)+1.12*Math.max(Math.abs(d.dot(right))/tanH,Math.abs(d.dot(up))/tanV))}
+ if(!s.active){target.addScaledVector(right,-distance*tanH*.25);distance*=1.22}
+ camera.position.copy(target).addScaledVector(dir,distance+.18);camera.lookAt(target)
+}
 function draw(s,renderFrame=true){const w=canvas.clientWidth,h=canvas.clientHeight;if(w!==width||h!==height){width=w;height=h;renderer.setSize(w,h,false);camera.aspect=w/Math.max(1,h);camera.fov=2*Math.atan(Math.max(Math.tan(29*Math.PI/180),Math.tan(27*Math.PI/180)/camera.aspect))*180/Math.PI;camera.fov=Math.min(108,camera.fov);camera.updateProjectionMatrix()}const {p,sc,B,A,X,Y,Z}=rig(s);
 if(profileKey!==p.id){profileKey=p.id;rebuildBuckets(s);lastFill=-1;lastFillTime=-1;
  const deck=p.deck/sc,roof=p.height/sc,bodyW=p.width/sc;
@@ -659,8 +669,8 @@ if(profileKey!==p.id){profileKey=p.id;rebuildBuckets(s);lastFill=-1;lastFillTime
  const bScale=B/cadBoomLen,aScale=A/2.9;cadBoom.scale.set(p.width/sc/2.8,bScale,bScale);cadArm.scale.set(p.width/sc/2.8,aScale,aScale);
  undercarriage.visible=false;cadUnder.scale.set(p.width/sc/2.8,deck, p.track/sc/3.8244);for(const g of trackGroups)g.visible=false;buildTrackCAD(p,sc);
 }
-base.position.set(-s.x,heightAt(-s.x,s.z),s.z);base.rotation.y=-s.yaw;base.scale.set(-s.scale,s.scale,s.scale);upper.rotation.y=s.swing;boom.rotation.x=-s.b;arm.rotation.x=-s.a;tool.rotation.x=-s.k;tools.forEach((o,i)=>o.visible=i===s.att);applyHydraulic(s);chisel.position.z=.96;updateRams(s);flexLines(s,B,A);updateTrackCAD(s);const inside=s.cab&&s.active;const targetFov=inside?Math.min(100,2*Math.atan(Math.max(Math.tan(21*Math.PI/180),Math.tan(27*Math.PI/180)/camera.aspect))*180/Math.PI):Math.min(90,2*Math.atan(Math.max(Math.tan(22*Math.PI/180),Math.tan(25*Math.PI/180)/camera.aspect))*180/Math.PI);if(Math.abs(camera.fov-targetFov)>.01){camera.fov=targetFov;camera.updateProjectionMatrix()}
-base.updateMatrixWorld(true);soilStep(s);const local=(p,g=upper)=>g.localToWorld(p);if(inside){camera.position.copy(local(v(-.04,p.open?.79:.88,p.open?.04:-.10),cab));camera.lookAt(camera.position.clone().add(local(v(0,-.23,1),upper).sub(local(v(0,0,0),upper)).multiplyScalar(7)))}else{const distance=Math.max(2.75,p.boom+p.arm)*1.12/sc;camera.position.copy(local(v(-distance*.84,distance*.48,distance*.70),base));camera.lookAt(local(v(s.active?0:Math.min(2.1,p.width*.65)/sc,p.height*.67/sc,p.boom*.39/sc),base))}camera.updateMatrixWorld();sun.position.set(-s.x-18,28,s.z+12);sun.target.position.set(-s.x,0,s.z);
+base.position.set(-s.x,heightAt(-s.x,s.z),s.z);base.rotation.y=-s.yaw;base.scale.set(-s.scale,s.scale,s.scale);upper.rotation.y=s.swing;boom.rotation.x=-s.b;arm.rotation.x=-s.a;tool.rotation.x=-s.k;tools.forEach((o,i)=>o.visible=i===s.att);applyHydraulic(s);chisel.position.z=.96;updateRams(s);flexLines(s,B,A);updateTrackCAD(s);const inside=s.cab&&s.active;const targetFov=inside?Math.min(110,2*Math.atan(Math.max(Math.tan(28*Math.PI/180),Math.tan(35*Math.PI/180)/camera.aspect))*180/Math.PI):Math.min(90,2*Math.atan(Math.max(Math.tan(25*Math.PI/180),Math.tan(30*Math.PI/180)/camera.aspect))*180/Math.PI);if(Math.abs(camera.fov-targetFov)>.01){camera.fov=targetFov;camera.updateProjectionMatrix()}
+base.updateMatrixWorld(true);soilStep(s);const local=(p,g=upper)=>g.localToWorld(p);if(inside){camera.position.copy(local(v(-.04,p.open?.79:.88,p.open?.04:-.10),cab));camera.lookAt(camera.position.clone().add(local(v(0,-.30,1),upper).sub(local(v(0,0,0),upper)).multiplyScalar(7)))}else{fitExteriorCamera(s)}camera.updateMatrixWorld();sun.position.set(-s.x-18,28,s.z+12);sun.target.position.set(-s.x,0,s.z);
 const status=s.engine+'/'+s.unlocked;if(status!==lastDisplay){lastDisplay=status;dc.fillStyle='#14201c';dc.fillRect(0,0,256,192);dc.fillStyle=s.engine?'#a0e6a4':'#8a9993';dc.font='bold 23px monospace';dc.fillText(s.engine?'ENGINE ON':'STANDBY',15,40);dc.font='19px monospace';dc.fillText(s.unlocked?'HYD READY':'LOCKED',15,79);dc.fillStyle='#64746a';dc.fillRect(15,112,226,18);dc.fillStyle='#d3ba65';dc.fillRect(15,112,s.engine?155:10,18);dc.font='15px monospace';dc.fillText('FUEL    TEMP',15,155);displayTex.needsUpdate=true}
 if(renderFrame)renderer.render(scene,camera)}
 function inspect(s){
@@ -669,7 +679,7 @@ function inspect(s){
  let meshes=0,vertices=0,invalid=0;const bounds=new T.Box3();
  base.traverseVisible(o=>{if(!o.isMesh)return;meshes++;const a=o.geometry?.attributes?.position;if(!a)return;vertices+=a.count;const b=new T.Box3().setFromObject(o);if(!b.isEmpty()){for(const value of [...b.min.toArray(),...b.max.toArray()])if(!Number.isFinite(value))invalid++;bounds.union(b)}});
  const gl=renderer.getContext(),errors=[];for(let i=0;i<16;i++){const code=gl.getError();if(code===gl.NO_ERROR)break;errors.push(code)}
- return {model:machineProfile(s).id,attachment:s.att,view:s.cab?'cab':'outside',meshCount:meshes,vertexCount:vertices,invalidBounds:invalid,tipErrorM:gap,bounds:{min:bounds.min.toArray(),max:bounds.max.toArray()},camera:camera.position.toArray(),cameraDirection:camera.getWorldDirection(v(0,0,0)).toArray(),soil,terrainMin:Math.min(...heights),linkValid:linkGeometry(s).valid,webglErrors:errors,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles};
+ let screenOverflow=0;if(!s.cab){for(const x of [exteriorBounds.min.x,exteriorBounds.max.x])for(const y of [exteriorBounds.min.y,exteriorBounds.max.y])for(const z of [exteriorBounds.min.z,exteriorBounds.max.z]){const q=v(x,y,z).project(camera);screenOverflow=Math.max(screenOverflow,Math.abs(q.x)-1,Math.abs(q.y)-1)}}return {screenOverflow,model:machineProfile(s).id,attachment:s.att,view:s.cab?'cab':'outside',meshCount:meshes,vertexCount:vertices,invalidBounds:invalid,tipErrorM:gap,bounds:{min:bounds.min.toArray(),max:bounds.max.toArray()},camera:camera.position.toArray(),cameraDirection:camera.getWorldDirection(v(0,0,0)).toArray(),soil,terrainMin:Math.min(...heights),linkValid:linkGeometry(s).valid,webglErrors:errors,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles};
 }
 return {draw,resetTerrain,resolveMotion,inspect,photoAssetsReady};
 }

@@ -48,7 +48,7 @@ function bucketSpec(s,att=s.att){
  const H=(att===1?f[7]:f[2]*(att===2?1.06:1))/sc;
  const zf=D/(att===1?.88:1.10),yf=H/(att===1?.63:.88);
  const cv=([z,y])=>[z*zf,y*yf];
- const shell=form.shell.map(cv),rim=form.rim.map(cv),lip=shell[shell.length-1],tip=[form.tip[0]*yf,form.tip[1]*zf];
+ const shell=form.shell.map(cv),rim=form.rim.map(cv),lip=shell[shell.length-1],tip=[form.tip[0]*yf,att===1?lip[0]+D*.14*.68:form.tip[1]*zf];
  const gap=f[3]/sc,pin=f[4]/sc,thick=Math.max(.010,.012/sc*Math.sqrt(f[0]/.75));
  // Direction from the shell toward the open mouth, derived from the rim endpoints.
  const dy=lip[1]-rim[0][1],dz=lip[0]-rim[0][0],len=Math.hypot(dy,dz);
@@ -169,7 +169,7 @@ const geo=new T.PlaneGeometry(terrainSize,terrainSize,subdivisions,subdivisions)
 const pos=geo.attributes.position, initial=new Float32Array(pos.count), heights=new Float32Array(pos.count), colors=new Float32Array(pos.count*3);
 const soilColor=new T.Color(), cDry=new T.Color(0xf1e6d6),cWet=new T.Color(0x74604a),cFresh=new T.Color(0xa1825d);
 function paintVertex(i){const delta=heights[i]-initial[i], variation=.92+.08*Math.sin(i*17.17);soilColor.copy(cDry).lerp(delta<0?cWet:cFresh,Math.min(.8,Math.abs(delta)*2.4)).multiplyScalar(variation);colors.set([soilColor.r,soilColor.g,soilColor.b],i*3)}
-for(let i=0;i<pos.count;i++){let xx=pos.getX(i),zz=pos.getZ(i);let fade=Math.min(1,Math.max(0,(half-Math.max(Math.abs(xx),Math.abs(zz)))/3));let y=(Math.sin(xx*.38)*Math.cos(zz*.32)*.085+Math.sin(xx*1.4+zz*.7)*.025)*fade;initial[i]=heights[i]=y;pos.setY(i,y);paintVertex(i)}
+for(let i=0;i<pos.count;i++){let xx=pos.getX(i),zz=pos.getZ(i);let fade=Math.min(1,Math.max(0,(half-Math.max(Math.abs(xx),Math.abs(zz)))/3));let y=(Math.sin(xx*.38)*Math.cos(zz*.32)*.065+Math.sin(xx*1.4+zz*.7)*.012)*fade;initial[i]=heights[i]=y;pos.setY(i,y);paintVertex(i)}
 geo.setAttribute('color',new T.BufferAttribute(colors,3));geo.computeVertexNormals();geo.computeBoundingSphere();geo.boundingSphere.radius+=5;
 const detail=dirt.clone();detail.repeat.set(terrainSize/2,terrainSize/2);detail.needsUpdate=true;
 const groundMaterial=new T.MeshStandardMaterial({color:0xffffff,vertexColors:true,map:detail,bumpMap:detail,bumpScale:.027,roughness:.98});
@@ -615,13 +615,13 @@ function contactProfile(s){
  const q=bucketSpec(s);if(!q)return null;const bw=q.W,[ty,tz]=q.tip;
  const lip=toolPoint(s,0,ty,tz),back=toolPoint(s,0,q.shell[4][1],q.shell[4][0]);
  const t=s.yaw+s.swing,axis={x:-Math.cos(t),z:-Math.sin(t)};
- let edgeGap=Infinity,backGap=Infinity,lowestBack=back;
+ let edgeGap=Infinity,backGap=Infinity,lowestBack=back,backLocal=q.shell[4],lowY=Infinity;
  for(const f of [-.47,0,.47]){
   const p=toolPoint(s,bw*f,ty,tz);edgeGap=Math.min(edgeGap,p.y-heightAt(p.x,p.z));
-  for(const [z,y] of q.shell.slice(1,-1)){const pt=toolPoint(s,bw*f,y,z),gap=pt.y-heightAt(pt.x,pt.z);if(gap<backGap){backGap=gap;lowestBack=toolPoint(s,0,y,z)}}
+  for(const [z,y] of q.shell.slice(1,-1)){const pt=toolPoint(s,bw*f,y,z),gap=pt.y-heightAt(pt.x,pt.z);if(gap<backGap)backGap=gap;const center=toolPoint(s,0,y,z);if(center.y<lowY){lowY=center.y;lowestBack=center;backLocal=[z,y]}}
  }
  const angle=s.b+s.a+s.k,backDown=Math.cos(angle)<-.10;
- return {bw,lip,back:lowestBack,axis,edgeGap,backGap,backDown,ny:q.normalY,nz:q.normalZ};
+ return {bw,lip,back:lowestBack,backLocal,axis,edgeGap,backGap,backDown,ny:q.normalY,nz:q.normalZ};
 }
 function redistribute(p,axis,width,amount,dx,dz){
  if(amount<=0)return;
@@ -638,11 +638,41 @@ function editStrip(p,axis,width,floor,limit,depth){
  for(const [i,w] of cells){const old=heights[i],d=Math.min(Math.max(0,old-Math.max(-2.8,floor)),limit*w);if(d>0){change(i,old-d);volume+=d*step*step}}
  return volume;
 }
+
+function gradingMotion(prev,next,old,p){
+ if(!old||!p)return null;
+ const sc=next.scale,width=p.bw*sc,[z,y]=p.backLocal,prior=toolPoint(prev,0,y,z),dx=p.back.x-prior.x,dz=p.back.z-prior.z,dy=p.back.y-prior.y,slide=Math.hypot(dx,dz);
+ if(slide<1e-7||Math.abs(dy)>slide*1.15)return null;
+ const heelFirst=p.backGap<=p.edgeGap+.018*sc;
+ const flatEdge=next.att===1&&Math.abs(p.lip.y-p.back.y)<.15*sc&&p.backGap<=p.edgeGap+.09*sc;
+ if(!(heelFirst||flatEdge)||p.backGap>.055*sc||p.backGap<-.22*sc)return null;
+ return {prior,dx,dz,dy,slide,width,sc};
+}
+function gradeStrip(prev,next,p,g){
+ const {prior,dx,dz,slide,width,sc}=g,ux=dx/slide,uz=dz/slide;
+ const mid={x:(p.back.x+prior.x)*.5,z:(p.back.z+prior.z)*.5,y:(p.back.y+prior.y)*.5};
+ const floor=mid.y,footprint=Math.max(step*.85,slide+step*.60);
+ const removed=editStrip(mid,p.axis,width,floor,Math.min(.12*sc,slide*3.6),footprint);
+ if(removed<=0)return 0;
+ let remaining=removed;
+ const {cells}=edgeWeights(mid.x,mid.z,p.axis.x,p.axis.z,width,footprint);
+ for(const [i,w] of cells){const vol=Math.min(remaining,Math.max(0,floor-heights[i])*step*step*w);if(vol>0){change(i,heights[i]+vol/(step*step));remaining-=vol}if(remaining<1e-9)break}
+ if(remaining>0){
+  const ahead=Math.max(step*1.5,footprint*.85),center={x:mid.x+ux*ahead,z:mid.z+uz*ahead};
+  const spread=edgeWeights(center.x,center.z,p.axis.x,p.axis.z,width,step*1.2);
+  if(spread.total>0){for(const [i,w] of spread.cells)change(i,heights[i]+remaining*w/spread.total/(step*step))}
+  else redistribute(mid,p.axis,width,remaining,dx,dz);
+ }
+ return removed;
+}
+
 function preCut(prev,next){
  const old=contactProfile(prev),p=contactProfile(next);if(!p||!old)return '';
  const dx=p.lip.x-old.lip.x,dz=p.lip.z-old.lip.z,dy=p.lip.y-old.lip.y,horiz=Math.hypot(dx,dz),travel=Math.hypot(horiz,dy),width=p.bw*next.scale;
  const actuated=Math.abs(next.a-prev.a)+Math.abs(next.k-prev.k)>1e-8,closing=next.k<prev.k-1e-8,pulling=next.a<prev.a-1e-8;
- if(!actuated||travel<1e-8)return '';
+ if(travel<1e-8)return '';
+ const grade=gradingMotion(prev,next,old,p);if(grade){const removed=gradeStrip(prev,next,p,grade);return removed>0?'整地':'背面接地'}
+ if(!actuated)return '';
  const angle=next.b+next.a+next.k,t=next.yaw+next.swing,sc=next.scale;
  const forward=-Math.sin(t)*dx+Math.cos(t)*dz;
  const mouthZ=-p.ny*Math.sin(angle)+p.nz*Math.cos(angle),mouthY=p.ny*Math.cos(angle)+p.nz*Math.sin(angle);
@@ -700,9 +730,9 @@ function resolveMotion(prev,next){
   }
  }
  excavationLoad=load;
- const isGrading=!!(old&&target&&target.backGap<.07*next.scale&&target.backGap<=target.edgeGap+(target.backDown?.055:.02)*next.scale&&Math.abs(next.a-prev.a)>1e-8);
+ const isGrading=!!gradingMotion(prev,next,old,target);
  // A shallow, moving heel may compact/shave soil. A stationary bucket is solid.
- const permitted=isGrading?.045*next.scale:0;
+ const permitted=isGrading?.065*next.scale:0;
  function rollback(){
   const tx=terrainTransaction;terrainTransaction=null;
   for(const [i,y] of tx)change(i,y);soil=before;pendingCut=pendingBefore;
@@ -712,7 +742,7 @@ function resolveMotion(prev,next){
  function attempt(q,commit){
   if(!previousObstacle&&courseCollision(q))return false;
   terrainTransaction=new Map();const mode=preCut(prev,q),cutting=mode==='掘削'||mode==='鋤取り';
-  const limit=Math.max(collisionDepth(prev,cutting),permitted)+.00008;
+  const grading=mode==='整地'||mode==='背面接地';const limit=Math.max(collisionDepth(prev,cutting),grading?permitted:0)+.00008;
   const ok=collisionDepth(q,cutting)<=limit;
   if(ok&&commit){terrainTransaction=null;workMode=mode;if(course&&!course.finished&&soil>before)course.dug+=soil-before;return true}
   rollback();return ok;

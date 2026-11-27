@@ -88,10 +88,10 @@ for(const side of [-1,1]){
  extrude(g,bucketSteel,shape,.038,side*(w/2-.019),0,0,.009);
  const rim=segment(g,worn,.010);place(rim,v(side*w*.5,-.095,.12),v(side*w*.5,.18,.79));
 }
-if(skeleton){for(let j=0;j<8;j++){let rib=curvedPlate(g,profile,.032,bucketSteel);rib.position.x=(j-3.5)*w/8}}
+if(skeleton){for(let j=0;j<8;j++){let rib=curvedPlate(g,profile,.032,bucketSteel);rib.position.x=(j-3.5)*w/8}for(let i=1;i<profile.length-1;i++){const [z,y]=profile[i],o=box(g,bucketSteel,0,y,z,w,.038,.044);o.rotation.x=-Math.atan2(profile[i+1][1]-profile[i-1][1],profile[i+1][0]-profile[i-1][0])}}
 else {curvedPlate(g,profile,w,bucketSteel);curvedPlate(g,profile.map(([z,y])=>[z,y-.018]),w-.05,worn)}
 box(g,bucketSteel,0,-.065,.065,Math.min(.30,w*.78),.11,.18);
-const lip=box(g,worn,0,.18,.79,w,.045,.10);lip.rotation.x=.23;
+const lip=box(g,worn,0,.18,.79,w,.045,.10);lip.rotation.x=.23;if(!teeth){box(g,bucketSteel,0,.375,.40,w,.035,.28);box(g,worn,0,.18,.805,w,.023,.075)}
 for(let j=0;j<(skeleton?0:3);j++){let strip=curvedPlate(g,[[.05,.23],[.17,.345],[.32,.41],[.49,.40],[.62,.335]],.047,worn);strip.position.x=(j-1)*w/3}
 for(let i=0;i<teeth;i++){
  const xx=(i-(teeth-1)/2)*w/(teeth+.5);
@@ -102,12 +102,38 @@ for(let i=0;i<teeth;i++){
 }
 for(const xx of [-.15,.15]){
  extrude(g,bucketSteel,[[-.08,-.04],[.18,-.12],[.28,.04],[.07,.13]],.052,xx,0,0,.011);
- cyl(g,worn,xx,.015,.03,.065,.075,'x');
+ cyl(g,worn,xx,.015,.03,.065,.075,'x');cyl(g,worn,xx,-.06,.20,.052,.068,'x');
 }
-return g}
-tools[0]=bucket(.77,5);tools[1]=bucket(1.30,0);tools[2]=bucket(.38,3);const breaker=group(tool);box(breaker,steel,0,0,.44,.30,.34,.92);box(breaker,paint,0,.03,.38,.32,.23,.64);cyl(breaker,chrome,0,0,1.02,.045,.46,'z');tools[3]=breaker;const fork=group(tool);box(fork,steel,0,0,.14,.86,.16,.18);for(const side of [-1,1])box(fork,steel,side*.27,-.12,.55,.11,.09,.91);tools[4]=fork;tools[5]=bucket(.82,5,true);const jaws=[];for(let i=6;i<=7;i++){const g=group(tool),pair=[];box(g,steel,0,0,.16,.48,.30,.37);for(const side of [-1,1]){let j=group(g,side*.17,0,.26);extrude(j,steel,[[0,-.12],[.52,-.15],[.68,.03],[.42,.16],[0,.12]],.13,0,0,0,.02);pair.push(j)}jaws.push(pair);tools[i]=g}
-
-
+cyl(g,steel,0,.015,.03,.045,.36,'x');cyl(g,chrome,0,-.06,.20,.037,.36,'x');return g}
+tools[0]=bucket(.77,5);tools[1]=bucket(1.30,0);tools[2]=bucket(.38,3);tools[5]=bucket(.82,4,true);
+const attachmentPaint=mat(0x225b83,.48,.25), jawSteel=mat(0x4d5355,.65,.55), jawEdge=mat(0x858983,.47,.65);
+function mount(g,w=.32){for(const x of [-w/2,w/2]){extrude(g,attachmentPaint,[[-.10,-.07],[.12,-.15],[.24,-.08],[.24,.09],[.06,.12],[-.10,.07]],.065,x,0,0,.016);cyl(g,worn,x,0,0,.082,.076,'x');cyl(g,worn,x,-.05,.18,.065,.076,'x')}cyl(g,chrome,0,0,0,.045,w+.12,'x');cyl(g,chrome,0,-.05,.18,.037,w+.12,'x')}
+const breaker=group(tool);mount(breaker,.30);
+extrude(breaker,attachmentPaint,[[.12,-.15],[.27,-.20],[.82,-.20],[.96,-.12],[.96,.12],[.82,.20],[.27,.20],[.12,.15]],.34,0,0,0,.025);
+for(const x of [-.185,.185]){box(breaker,steel,x,0,.53,.035,.34,.62);for(const z of [.32,.72])cyl(breaker,worn,x,0,z,.041,.045,'x')}
+cyl(breaker,steel,0,0,.91,.10,.13,'z');const chisel=group(breaker,0,0,.96);cyl(chisel,chrome,0,0,.12,.045,.24,'z');cyl(chisel,worn,0,0,.30,.004,.12,'z',.045);tools[3]=breaker;
+const mechanisms=[];
+function hinge(g,y,z){const j=group(g,0,y,z);cyl(j,chrome,0,0,0,.066,.45,'x');return j}
+function jawCylinder(g,x,anchor,j,localEnd){const pair=[segment(g,attachmentPaint,.064),segment(g,chrome,.032)];return {pair,anchor:v(x,anchor[0],anchor[1]),j,end:v(x,localEnd[0],localEnd[1])}}
+function updateJawCylinder(c){const end=c.end.clone().applyAxisAngle(v(1,0,0),c.j.rotation.x).add(c.j.position);adjust(c.pair,c.anchor,end,.58)}
+// Grasping fork: interleaving two/three tines in a common closing plane.
+const fork=group(tool);mount(fork,.31);box(fork,attachmentPaint,0,0,.24,.42,.30,.30);
+const forkLow=hinge(fork,.12,.30),forkHigh=hinge(fork,-.12,.30);
+const tine=[[0,-.06],[.24,-.10],[.47,-.16],[.65,-.25],[.76,-.37],[.70,-.40],[.58,-.30],[.40,-.07],[.18,.08],[0,.08]];
+for(const [j,sign,xs] of [[forkLow,1,[-.24,.24]],[forkHigh,-1,[-.24,0,.24]]]){for(const x of xs)extrude(j,jawSteel,tine.map(([z,y])=>[z,y*sign]),.085,x,0,0,.015);box(j,steel,0,0,.13,.58,.12,.12)}
+mechanisms.push({att:4,joints:[{j:forkLow,sign:-1,open:.52},{j:forkHigh,sign:1,open:.52}],cylinders:[jawCylinder(fork,0,[-.09,.13],forkHigh,[.03,.21])]});tools[4]=fork;
+// Primary demolition crusher: two moving curved jaws, twin hydraulic rams.
+const crusher=group(tool);mount(crusher,.34);cyl(crusher,attachmentPaint,0,0,.22,.245,.14,'z');box(crusher,attachmentPaint,0,0,.40,.46,.40,.30);
+const crusherJaws=[],crusherCyl=[];
+for(const sign of [-1,1]){const j=hinge(crusher,sign*.17,.43);const outline=[[0,-.10],[.20,-.15],[.44,-.14],[.70,-.27],[.80,-.35],[.74,-.42],[.60,-.34],[.48,-.23],[.33,-.19],[.16,-.04],[0,.12]].map(([z,y])=>[z,y*sign]);extrude(j,jawSteel,outline,.22,0,0,0,.025);for(let i=0;i<3;i++){const z=.42+i*.095;extrude(j,jawEdge,[[z,-sign*.16],[z+.07,-sign*.25],[z+.11,-sign*.17]],.22,0,0,0,.009)}crusherJaws.push({j,sign:-sign,open:.48});crusherCyl.push(jawCylinder(crusher,sign*.15,[sign*.15,.25],j,[sign*.08,.23]))}
+mechanisms.push({att:6,joints:crusherJaws,cylinders:crusherCyl});tools[6]=crusher;
+// Secondary pulverizer: a fixed wide lower jaw and a single hinged upper jaw.
+const pulverizer=group(tool);mount(pulverizer,.32);extrude(pulverizer,attachmentPaint,[[.12,-.15],[.30,-.20],[.54,-.13],[.62,.11],[.45,.23],[.14,.17]],.44,0,0,0,.025);
+const fixed=group(pulverizer,0,.17,.34),moving=hinge(pulverizer,-.12,.46);
+extrude(fixed,jawSteel,[[0,-.02],[.28,.02],[.60,-.08],[.77,-.24],[.71,-.30],[.44,-.18],[.18,-.08],[0,.12]],.52,0,0,0,.025);
+extrude(moving,jawSteel,[[0,-.09],[.24,-.13],[.52,-.03],[.67,.14],[.62,.22],[.40,.14],[.18,.08],[0,.11]],.43,0,0,0,.025);
+for(let i=0;i<4;i++)for(let j=0;j<3;j++){const x=(j-1)*.14,z=.30+i*.09;box(fixed,jawEdge,x,-.055-i*.027,z,.092,.095,.073);box(moving,jawEdge,x,.07+i*.014,z,.085,.095,.07)}
+mechanisms.push({att:7,joints:[{j:moving,sign:1,open:.70}],cylinders:[jawCylinder(pulverizer,0,[-.13,.22],moving,[-.07,.22])]});tools[7]=pulverizer;
 const soilMat=new T.MeshStandardMaterial({color:0x947454,roughness:1,side:T.DoubleSide});
 const carried=mesh(tool,new T.BufferGeometry(),soilMat,0,0,0,false);carried.visible=false;
 const clodGeo=new T.IcosahedronGeometry(1,1),clodMat=mat(0x8d6c4e,1);
@@ -141,9 +167,10 @@ const toolSamples=Array.from({length:8},(_,att)=>{
  if(bw){for(const xx of [-bw*.48,0,bw*.48]){
   for(const [zz,yy] of [[-.09,.035],[.025,.19],[.16,.32],[.32,.39],[.49,.38],[.63,.31],[.74,.23],[.12,-.095]])points.push([xx,yy,zz,0]);
   points.push([xx,.18,.79,1]);if(att!==1)points.push([xx,.26,.97,1]);
- }}else if(att===3){for(const [zz,yy] of [[.05,-.16],[.45,-.17],[.85,-.16],[1.25,0]])points.push([0,yy,zz,0],[.14,yy,zz,0],[-.14,yy,zz,0])}
- else if(att===4){for(const xx of [-.32,.32])for(const zz of [.1,.5,1.0])points.push([xx,-.17,zz,0])}
- else{for(const xx of [-.32,0,.32])for(const zz of [.1,.45,.94])points.push([xx,-.15,zz,0],[xx,.15,zz,0])}
+ }}else if(att===3){for(const [zz,yy] of [[.12,-.15],[.45,-.20],[.85,-.20],[.96,-.12],[1.32,0]])points.push([0,yy,zz,0],[.17,yy,zz,0],[-.17,yy,zz,0])}
+ else if(att===4){for(const xx of [-.29,0,.29])for(const zz of [.2,.5,.95])points.push([xx,-.30,zz,0],[xx,.30,zz,0])}
+ else if(att===6){for(const xx of [-.12,0,.12])for(const zz of [.4,.8,1.20])points.push([xx,-.40,zz,0],[xx,.40,zz,0])}
+ else{for(const xx of [-.26,0,.26])for(const zz of [.35,.65,1.10])points.push([xx,-.28,zz,0],[xx,.25,zz,0])}
  return points;
 });
 function collisionDepth(s,cutting){
@@ -311,7 +338,7 @@ let info=bucket?'土量 '+Math.round(soil*1000)/1000+' / '+Math.round(capacity*1
 }
 let width=0,height=0;
 
-function draw(s){const w=canvas.clientWidth,h=canvas.clientHeight;if(w!==width||h!==height){width=w;height=h;renderer.setSize(w,h,false);camera.aspect=w/Math.max(1,h);camera.fov=2*Math.atan(Math.max(Math.tan(29*Math.PI/180),Math.tan(27*Math.PI/180)/camera.aspect))*180/Math.PI;camera.fov=Math.min(108,camera.fov);camera.updateProjectionMatrix()}base.position.set(-s.x,heightAt(-s.x,s.z),s.z);base.rotation.y=-s.yaw;base.scale.set(-s.scale,s.scale,s.scale);upper.rotation.y=s.swing;boom.rotation.x=-s.b;arm.rotation.x=-s.a;tool.rotation.x=-s.k;tools.forEach((o,i)=>o.visible=i===s.att);for(const pair of jaws){pair[0].rotation.y=-s.aux*.34;pair[1].rotation.y=s.aux*.34}adjust(lift,v(.38,1.13,.76),v(.38,1.45+Math.sin(s.b)*1.25, .55+Math.cos(s.b)*1.25));adjust(stickCylinder,v(0,.23,.62),v(0,Math.sin(s.a)*.48,2.25+Math.cos(s.a)*.48));adjust(bucketCylinder,v(0,.15,.57),v(0,Math.sin(s.k)*.23,1.65+Math.cos(s.k)*.23));const inside=s.cab&&s.active;
+function draw(s){const w=canvas.clientWidth,h=canvas.clientHeight;if(w!==width||h!==height){width=w;height=h;renderer.setSize(w,h,false);camera.aspect=w/Math.max(1,h);camera.fov=2*Math.atan(Math.max(Math.tan(29*Math.PI/180),Math.tan(27*Math.PI/180)/camera.aspect))*180/Math.PI;camera.fov=Math.min(108,camera.fov);camera.updateProjectionMatrix()}base.position.set(-s.x,heightAt(-s.x,s.z),s.z);base.rotation.y=-s.yaw;base.scale.set(-s.scale,s.scale,s.scale);upper.rotation.y=s.swing;boom.rotation.x=-s.b;arm.rotation.x=-s.a;tool.rotation.x=-s.k;tools.forEach((o,i)=>o.visible=i===s.att);for(const m of mechanisms){for(const q of m.joints)q.j.rotation.x=q.sign*q.open*(1-s.aux);for(const c of m.cylinders)updateJawCylinder(c)}chisel.position.z=.96;adjust(lift,v(.38,1.13,.76),v(.38,1.45+Math.sin(s.b)*1.25, .55+Math.cos(s.b)*1.25));adjust(stickCylinder,v(0,.23,.62),v(0,Math.sin(s.a)*.48,2.25+Math.cos(s.a)*.48));adjust(bucketCylinder,v(0,.15,.57),v(0,Math.sin(s.k)*.23,1.65+Math.cos(s.k)*.23));const inside=s.cab&&s.active;
 base.updateMatrixWorld(true);soilStep(s);const local=(p,g=upper)=>g.localToWorld(p);if(inside){camera.position.copy(local(v(-.63,2.37,.12)));camera.lookAt(local(v(-.63,1.56,7.2)))}else{camera.position.copy(local(v(-6.5,4.1,6.8),base));camera.lookAt(local(v(s.active?0:2.9,1.35,.95),base))}camera.updateMatrixWorld();sun.position.set(-s.x-18,28,s.z+12);sun.target.position.set(-s.x,0,s.z);
 const status=s.engine+'/'+s.unlocked;if(status!==lastDisplay){lastDisplay=status;dc.fillStyle='#14201c';dc.fillRect(0,0,256,192);dc.fillStyle=s.engine?'#a0e6a4':'#8a9993';dc.font='bold 23px monospace';dc.fillText(s.engine?'ENGINE ON':'STANDBY',15,40);dc.font='19px monospace';dc.fillText(s.unlocked?'HYD READY':'LOCKED',15,79);dc.fillStyle='#64746a';dc.fillRect(15,112,226,18);dc.fillStyle='#d3ba65';dc.fillRect(15,112,s.engine?155:10,18);dc.font='15px monospace';dc.fillText('FUEL    TEMP',15,155);displayTex.needsUpdate=true}
 renderer.render(scene,camera)}

@@ -197,7 +197,7 @@ const geo=new T.PlaneGeometry(terrainSize,terrainSize,subdivisions,subdivisions)
 const pos=geo.attributes.position, initial=new Float32Array(pos.count), heights=new Float32Array(pos.count), looseDepth=new Float32Array(pos.count), damage=new Float32Array(pos.count), colors=new Float32Array(pos.count*3);let terrainMode=5;
 const soilColor=new T.Color(), cDry=new T.Color(0xf1e6d6),cWet=new T.Color(0x74604a),cFresh=new T.Color(0xa1825d);
 function layerForVertex(i,y=heights[i],mode=terrainMode){
- if(looseDepth[i]>.008&&y>=heights[i]-looseDepth[i]-.001)return LOOSE;
+ if(looseDepth[i]>.0001&&y>=heights[i]-looseDepth[i]-.001)return LOOSE;
  return stratumAt(mode,initial[i]-y,pos.getX(i),pos.getZ(i));
 }
 function paintVertex(i){
@@ -238,7 +238,7 @@ for(const [xx,zz,ww,dd] of [[0,-101,202,158],[0,101,202,158],[-101,0,158,44],[10
 let dirty=false,lastNormals=0;const unstable=new Set();
 function heightAt(xx,zz){let u=(xx+half)/step,w=(zz+half)/step;if(u<0||w<0||u>=subdivisions||w>=subdivisions)return 0;let ix=Math.floor(u),iz=Math.floor(w),dx=u-ix,dz=w-iz,i=iz*stride+ix;return (heights[i]*(1-dx)+heights[i+1]*dx)*(1-dz)+(heights[i+stride]*(1-dx)+heights[i+stride+1]*dx)*dz}
 function originalAt(xx,zz){const u=(xx+half)/step,w=(zz+half)/step;if(u<0||w<0||u>=subdivisions||w>=subdivisions)return 0;const ix=Math.floor(u),iz=Math.floor(w),dx=u-ix,dz=w-iz,i=iz*stride+ix;return (initial[i]*(1-dx)+initial[i+1]*dx)*(1-dz)+(initial[i+stride]*(1-dx)+initial[i+stride+1]*dx)*dz}
-function materialAt(s,x,z,y){const mode=Number(s.groundType??1),ix=Math.round((x+half)/step),iz=Math.round((z+half)/step);if(ix>=0&&ix<=subdivisions&&iz>=0&&iz<=subdivisions){const i=iz*stride+ix;if(looseDepth[i]>.008&&y>=heights[i]-looseDepth[i]-.001)return LOOSE}return stratumAt(mode,originalAt(x,z)-y,x,z)}
+function materialAt(s,x,z,y){const mode=Number(s.groundType??1),ix=Math.round((x+half)/step),iz=Math.round((z+half)/step);if(ix>=0&&ix<=subdivisions&&iz>=0&&iz<=subdivisions){const i=iz*stride+ix;if(looseDepth[i]>.0001&&y>=heights[i]-looseDepth[i]-.001)return LOOSE}return stratumAt(mode,originalAt(x,z)-y,x,z)}
 let terrainTransaction=null;
 function change(i,y,restoreLoose){
  const old=heights[i];if(Math.abs(old-y)<1e-7&&restoreLoose===undefined)return;
@@ -692,7 +692,7 @@ function redistribute(p,axis,width,amount,dx,dz){
 function editStrip(p,axis,width,floor,limit,depth,s){
  const {cells}=edgeWeights(p.x,p.z,axis.x,axis.z,width,Math.max(step*.65,depth));
  let volume=0;
- for(const [i,w] of cells){const old=heights[i],g=layerForVertex(i,old,s?Number(s.groundType):terrainMode);if(g.paved)continue;const layerLimit=looseDepth[i]>.008?old-looseDepth[i]:-Infinity;const rate=Math.min(1,Math.sqrt(100/Math.max(35,g.resistance)));const d=Math.min(Math.max(0,old-Math.max(floor,layerLimit)),limit*w*rate);if(d>0){change(i,old-d);volume+=d*step*step}}
+ for(const [i,w] of cells){const old=heights[i],g=layerForVertex(i,old,s?Number(s.groundType):terrainMode);if(g.paved)continue;const layerLimit=looseDepth[i]>.0001?old-looseDepth[i]:-Infinity;const rate=Math.min(1,Math.sqrt(100/Math.max(35,g.resistance)));const d=Math.min(Math.max(0,old-Math.max(floor,layerLimit)),limit*w*rate);if(d>0){change(i,old-d);volume+=d*step*step}}
  return volume;
 }
 
@@ -924,5 +924,7 @@ function inspect(s){
  const gl=renderer.getContext(),errors=[];for(let i=0;i<16;i++){const code=gl.getError();if(code===gl.NO_ERROR)break;errors.push(code)}
  let screenOverflow=0;if(!s.cab){for(const x of [exteriorBounds.min.x,exteriorBounds.max.x])for(const y of [exteriorBounds.min.y,exteriorBounds.max.y])for(const z of [exteriorBounds.min.z,exteriorBounds.max.z]){const q=v(x,y,z).project(camera);screenOverflow=Math.max(screenOverflow,Math.abs(q.x)-1,Math.abs(q.y)-1)}}return {ground:groundType(s).name,diggingForce:DIG_FORCE[MACHINE_PROFILES.indexOf(machineProfile(s))],load:excavationLoad,lip:visual.toArray(),contact:contactProfile(s),angles:[s.b,s.a,s.k,s.swing],screenOverflow,model:machineProfile(s).id,attachment:s.att,view:s.cab?'cab':'outside',meshCount:meshes,vertexCount:vertices,invalidBounds:invalid,tipErrorM:gap,bounds:{min:bounds.min.toArray(),max:bounds.max.toArray()},camera:camera.position.toArray(),cameraDirection:camera.getWorldDirection(v(0,0,0)).toArray(),soil,terrainMin:Math.min(...heights),maxReferenceDepth:MAX_DIG_DEPTH[MACHINE_PROFILES.indexOf(machineProfile(s))],boomMin:machineBoomMin(s),linkValid:linkGeometry(s).valid,webglErrors:errors,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles};
 }
-return {draw,resetTerrain,resolveMotion,inspect,photoAssetsReady,startCourse,courseTick,courseStatus,finishCourse,clearCourse,getLoad:()=>excavationLoad};
+function canSwap(s,newAtt){return soil<.0001&&collisionDepth({...s,att:newAtt},false)<.01}
+function toolSwapped(){previousTip=null;previousK=null;previousA=null;pendingCut=0;workMode='';excavationLoad=0;spillDelay=0;lastFill=-1;lastFillTime=-1}
+return {draw,resetTerrain,resolveMotion,inspect,photoAssetsReady,startCourse,courseTick,courseStatus,finishCourse,clearCourse,getLoad:()=>excavationLoad,canSwap,toolSwapped};
 }

@@ -113,7 +113,7 @@ const COURSES=[
  {name:'04 水平鋤取り',kind:'grade',seconds:240,goal:'黄色枠内の盛土を緑の基準高さまで均す'},
  {name:'05 溝掘削',kind:'grade',seconds:300,goal:'黄色枠内を指定深さに掘る'},
  {name:'06 法面整形',kind:'grade',seconds:300,goal:'黄色枠内を緑の基準勾配に仕上げる'},
- {name:'07 ダンプ積込み',kind:'truck',seconds:900,goal:'掘削と旋回を繰り返し、ダンプを指定土量まで積み込む'},
+ {name:'07 ダンプ積込み',kind:'truck',seconds:900,goal:'最大積載量を確認し、過積載になる前に積込みOKを押す'},
  {name:'08 狭所作業',kind:'delivery',seconds:240,goal:'障害物を避けて掘削し、黄色枠へ排土'}
 ];
 const courseUnit=v=>Math.max(0,Math.min(1,v));
@@ -527,14 +527,14 @@ const clodGeo=new T.IcosahedronGeometry(1,1),clodMat=weathered(mat(0x927556,1),2
 const intake=new T.InstancedMesh(clodGeo,clodMat,64),falling=new T.InstancedMesh(clodGeo,clodMat,96);
 intake.count=falling.count=0;intake.frustumCulled=falling.frustumCulled=false;tool.add(intake);scene.add(falling);
 const clodDummy=new T.Object3D(),incoming=[],drops=[];
-let pendingCut=0,workMode='',excavationLoad=0;let soil=0,previousTip=null,previousK=null,previousA=null,lastSoilInfo='',dumping=false,lastFillTime=-1,lastFill=-1,spillDelay=0;
+let pendingCut=0,workMode='',excavationLoad=0;let soil=0,soilMass=0,previousTip=null,previousK=null,previousA=null,lastSoilInfo='',dumping=false,lastFillTime=-1,lastFill=-1,spillDelay=0;
 let cavity=[],fillSpec=null;function cavityFor(q){return [...q.shell.map(([z,y])=>[z,y-q.thick*1.2]),...q.rim.slice(1,-1).reverse()]};
 function area(poly){let sum=0;for(let i=0;i<poly.length;i++){let a=poly[i],b=poly[(i+1)%poly.length];sum+=a[0]*b[1]-a[1]*b[0]}return Math.abs(sum)*.5}
 function clipFill(poly,ny,nz,level){let out=[];for(let i=0;i<poly.length;i++){const a=poly[i],b=poly[(i+1)%poly.length],da=a[1]*ny+a[0]*nz-level,db=b[1]*ny+b[0]*nz-level;if(da<=0)out.push(a);if((da<=0)!==(db<=0)){let t=da/(da-db);out.push([a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t])}}return out}
 function fillPolygon(f,ny,nz){let lo=Infinity,hi=-Infinity;for(const [z,y] of cavity){let h=y*ny+z*nz;lo=Math.min(lo,h);hi=Math.max(hi,h)}let target=area(cavity)*Math.max(0,Math.min(.96,f*.96));for(let i=0;i<15;i++){let mid=(lo+hi)/2;if(area(clipFill(cavity,ny,nz,mid))<target)lo=mid;else hi=mid}return clipFill(cavity,ny,nz,(lo+hi)/2)}
 function updateFill(f,bw,ny,nz,now){carried.visible=f>.002;if(!carried.visible)return;if(now-lastFillTime<40&&Math.abs(f-lastFill)<.01)return;lastFillTime=now;lastFill=f;let points=fillPolygon(f,ny,nz);if(points.length<3)return;const sh=new T.Shape();points.forEach(([z,y],i)=>i?sh.lineTo(z,y):sh.moveTo(z,y));sh.closePath();const innerW=Math.max(.04,bw-(fillSpec?.thick||.02)*3);const g=new T.ExtrudeGeometry(sh,{depth:innerW,bevelEnabled:false});g.translate(0,0,-innerW/2);g.rotateY(-Math.PI/2);g.computeVertexNormals();carried.geometry.dispose();carried.geometry=g}
 function deposit(xx,zz,amount,radius){let cells=[],total=0;brush(xx,zz,radius,(i,w)=>{cells.push([i,w]);total+=w});if(total<=0)return false;for(const [i,w] of cells)change(i,heights[i]+amount*w/total/(step*step));return true}
-function launchDrops(amount,bw,s,cap){if(amount<=0||drops.length>=96)return 0;let n=Math.min(96-drops.length,Math.max(1,Math.min(12,Math.ceil(amount/(cap*.006)))));for(let i=0;i<n;i++){let start=tool.localToWorld(v((rnd()-.5)*bw*.76,fillSpec?fillSpec.lip[1]:.10,fillSpec?fillSpec.lip[0]:.74));let end=tool.localToWorld(v(0,fillSpec?fillSpec.lip[1]+fillSpec.normalY*.5:-.32,fillSpec?fillSpec.lip[0]+fillSpec.normalZ*.5:.95)),origin=tool.localToWorld(v(0,0,0));let vel=end.sub(origin).normalize().multiplyScalar(.18+rnd()*.45);vel.y-=.15;drops.push({p:start,vel,amount:amount/n,r:Math.max(.012,Math.cbrt(amount/n)*.48),life:0,spread:Math.max(step*1.15,bw*s.scale*.18)})}return amount}
+function launchDrops(amount,bw,s,cap){if(amount<=0||drops.length>=96)return 0;let n=Math.min(96-drops.length,Math.max(1,Math.min(12,Math.ceil(amount/(cap*.006)))));for(let i=0;i<n;i++){let start=tool.localToWorld(v((rnd()-.5)*bw*.76,fillSpec?fillSpec.lip[1]:.10,fillSpec?fillSpec.lip[0]:.74));let end=tool.localToWorld(v(0,fillSpec?fillSpec.lip[1]+fillSpec.normalY*.5:-.32,fillSpec?fillSpec.lip[0]+fillSpec.normalZ*.5:.95)),origin=tool.localToWorld(v(0,0,0));let vel=end.sub(origin).normalize().multiplyScalar(.18+rnd()*.45);vel.y-=.15;drops.push({p:start,vel,amount:amount/n,mass:amount/n*(soil>0?soilMass/soil:0),r:Math.max(.012,Math.cbrt(amount/n)*.48),life:0,spread:Math.max(step*1.15,bw*s.scale*.18)})}return amount}
 function animateSoil(dt){intake.count=0;incoming.length=0;
 for(let i=drops.length-1;i>=0;i--){let p=drops[i],previousY=p.p.y;p.life+=dt;p.vel.y-=9.81*dt;p.p.addScaledVector(p.vel,dt);if(courseLanding(p,previousY)){drops.splice(i,1);continue}if(p.p.y<=heightAt(p.p.x,p.p.z)+p.r*.4||p.life>4){courseGroundLanding(p);if(!deposit(p.p.x,p.p.z,p.amount,p.spread))deposit(Math.max(-half+.5,Math.min(half-.5,p.p.x)),Math.max(-half+.5,Math.min(half-.5,p.p.z)),p.amount,p.spread);drops.splice(i,1)}}falling.count=drops.length;drops.forEach((p,i)=>{clodDummy.position.copy(p.p);clodDummy.scale.set(p.r,p.r*.85,p.r*.9);clodDummy.rotation.set(p.life*5,i,p.life*3);clodDummy.updateMatrix();falling.setMatrixAt(i,clodDummy.matrix)});falling.instanceMatrix.needsUpdate=true;}
 
@@ -554,10 +554,28 @@ const DUMP_PROFILES=[
  {label:'10tダンプ',w:2.49,l:5.10,bedY:1.42,wall:.55,cabL:2.02,cabH:1.96,r:.52,dual:true,axles:3,goal:5.0},
  {label:'10tダンプ',w:2.49,l:5.10,bedY:1.42,wall:.55,cabL:2.02,cabH:1.96,r:.52,dual:true,axles:3,goal:5.0}
 ];
+// Different simulated registered payloads within a nominal truck class.
+const TRUCK_FLEET=[
+ {base:0,payloads:[300,350],length:[.98,1.04]},
+ {base:1,payloads:[2000,2000],length:[.98,1.02]},
+ {base:2,label:'3tダンプ',payloads:[2750,3000],length:[1,1.05]},
+ {base:4,payloads:[3650,3700,4000],length:[.97,1.05]},
+ {base:5,payloads:[8600,8800,9000,9200,9500],length:[.96,1.06]},
+ {base:6,payloads:[8700,9100,9300],length:[1.02,1.09]}
+];
+function chooseDump(s,random=Math.random){
+ const i=MACHINE_PROFILES.indexOf(machineProfile(s)),pool=[[0],[0,1],[1,2],[1,2,3],[2,3],[3,4,5],[3,4,5]][i],f=TRUCK_FLEET[pool[Math.min(pool.length-1,Math.floor(random()*pool.length))]],base=DUMP_PROFILES[f.base],kg=f.payloads[Math.min(f.payloads.length-1,Math.floor(random()*f.payloads.length))],mix=f.length[0]+(f.length[1]-f.length[0])*random();
+ return {...base,label:f.label||base.label,l:base.l*mix,payloadKg:kg,paint:[0xe4e9e7,0xd4dce1,0x496b84,0x8b9e93][Math.min(3,Math.floor(random()*4))]};
+}
+function payloadAssessment(kg,max,spill,hits,elapsed,limit,exam){
+ const ratio=kg/max,over=kg>max+1e-6,enough=ratio>=.90&&!over,accuracy=kg+spill>0?kg/(kg+spill):1,timeout=exam&&elapsed>=limit;
+ const score=Math.max(0,Math.min(over?59:100,Math.round(85*Math.min(1,ratio)+15*accuracy-8*hits-(over?Math.min(45,15+100*(ratio-1)):0))));
+ return {ratio,over,enough,accuracy,score,pass:enough&&score>=70&&!timeout,timeout};
+}
 function buildDump(c,s,t){
- const d=DUMP_PROFILES[MACHINE_PROFILES.indexOf(machineProfile(s))],w=d.w,l=d.l,h=d.bedY,wall=d.wall,cl=d.cabL,ch=d.cabH,r=d.r,th=.075,clear=.10;
+ const d=chooseDump(s),w=d.w,l=d.l,h=d.bedY,wall=d.wall,cl=d.cabL,ch=d.cabH,r=d.r,th=.075,clear=.10;
  const x=t.x,z=t.z,y=heightAt(x,z),g=group(courseObjects,x,y,z),cabZ=l/2+clear+cl/2;
- const body=mat(0x21495d,.48,.28),bodyEdge=mat(0x163746,.55,.34),cabPaint=mat(0xe4e9e7,.34,.15),bed=mat(0x777d7d,.8,.36),frame=mat(0x303334,.75,.35),windowMat=mat(0x314750,.19,.38),lamp=mat(0xe8e0bd,.28,.1),red=mat(0x9c2220,.4),amber=mat(0xbd6b20,.4),hub=mat(0x8d9496,.5,.5),black=mat(0x171b1b,.9);
+ const body=mat(0x21495d,.48,.28),bodyEdge=mat(0x163746,.55,.34),cabPaint=mat(d.paint,.34,.15),bed=mat(0x777d7d,.8,.36),frame=mat(0x303334,.75,.35),windowMat=mat(0x314750,.19,.38),lamp=mat(0xe8e0bd,.28,.1),red=mat(0x9c2220,.4),amber=mat(0xbd6b20,.4),hub=mat(0x8d9496,.5,.5),black=mat(0x171b1b,.9);
  const bx=w*.5,front=cabZ+cl*.5,back=-l*.5;
  // Twin chassis rails, cross members, fuel tank, suspension and mudguards.
  for(const sign of [-1,1]){
@@ -585,6 +603,8 @@ function buildDump(c,s,t){
   box(g,amber,sign*w*.23,h-.19,back-.065,.10,.085,.045);
  }
  box(g,frame,0,h*.55,back-.08,w*.91,.14,.14);box(g,hub,0,h*.54,back-.16,.28,.13,.025);
+ const plate=document.createElement('canvas');plate.width=512;plate.height=112;const pc=plate.getContext('2d');pc.fillStyle='#edece3';pc.fillRect(0,0,512,112);pc.strokeStyle='#303334';pc.lineWidth=5;pc.strokeRect(2,2,508,108);pc.fillStyle='#202321';pc.font='bold 43px sans-serif';pc.textAlign='center';pc.fillText('最大積載量 '+d.payloadKg+'kg',256,70);
+ const tex=new T.CanvasTexture(plate);tex.colorSpace=T.SRGBColorSpace;const plateMesh=mesh(g,new T.PlaneGeometry(Math.min(w*.78,1.28),.23),new T.MeshBasicMaterial({map:tex}),0,h+wall*.49,back-.045,false);plateMesh.rotation.y=Math.PI;
  // Cab-over truck with shaped roof and angled windshield, doors, glazing and mirrors.
  const cabBottom=Math.max(.40,r*1.27),cabTop=cabBottom+ch,localFront=cl/2;
  extrude(g,cabPaint,[[-cl/2,0],[-cl/2,ch*.88],[-cl*.40,ch],[cl*.30,ch],[cl*.48,ch*.82],[localFront,ch*.12],[localFront,0]],w*.95,0,cabBottom,cabZ,.035);
@@ -619,7 +639,7 @@ function buildDump(c,s,t){
  }
  const innerW=w-2*th,innerL=l-2*th;
  const bounds={x0:x-innerW/2,x1:x+innerW/2,z0:z-innerL/2,z1:z+innerL/2,y:y+h,wall,innerW,innerL};
- c.truck=bounds;c.truckBounds={x0:x-w/2,x1:x+w/2,z0:z-l/2,z1:z+front,y0:y,y1:y+Math.max(cabTop,h+wall)};c.zone=bounds;c.goal=d.goal;c.limit=Math.max(720,Math.min(1200,Math.ceil(d.goal/c.bucketCap)*85));c.truckLabel=d.label;
+ c.truck=bounds;c.truckBounds={x0:x-w/2,x1:x+w/2,z0:z-l/2,z1:z+front,y0:y,y1:y+Math.max(cabTop,h+wall)};c.zone=bounds;c.payloadKg=d.payloadKg;c.loadedKg=0;c.spillKg=0;c.goal=d.payloadKg/1700;c.limit=Math.max(720,Math.min(1500,Math.ceil(c.goal/c.bucketCap)*85));c.truckLabel=d.label;
  // A low-resolution local heightfield represents separate bucket loads on the bed.
  const nx=12,nz=Math.max(14,Math.round(l*7)),geo=new T.PlaneGeometry(innerW,innerL,nx,nz);geo.rotateX(-Math.PI/2);
  const pile=mesh(g,geo,earth,0,h+.006,0,false);pile.visible=false;
@@ -689,10 +709,10 @@ function truckSurface(c,x,z){
 function courseLanding(drop,previousY){
  const c=course;if(!c||c.finished||!c.truck)return false;
  if(insideZone(c.truck,drop.p.x,drop.p.z)&&previousY>=c.truck.y&&drop.p.y<=truckSurface(c,drop.p.x,drop.p.z)){
-  c.delivered+=drop.amount;c.cycleVolume+=drop.amount;if(c.cycleOpen&&c.cycleVolume>=Math.max(.005,c.bucketCap*.18)){c.cycles++;c.cycleOpen=false}addTruckLoad(c,drop);return true;
+  c.delivered+=drop.amount;c.loadedKg+=(drop.mass??drop.amount*1.7)*1000;c.cycleVolume+=drop.amount;if(c.cycleOpen&&c.cycleVolume>=Math.max(.005,c.bucketCap*.18)){c.cycles++;c.cycleOpen=false}addTruckLoad(c,drop);return true;
  }return false;
 }
-function courseGroundLanding(drop){if(!course||course.finished||!course.zone)return;if(!course.truck&&insideZone(course.zone,drop.p.x,drop.p.z))course.delivered+=drop.amount;else course.spill+=drop.amount}
+function courseGroundLanding(drop){if(!course||course.finished||!course.zone)return;if(!course.truck&&insideZone(course.zone,drop.p.x,drop.p.z))course.delivered+=drop.amount;else{course.spill+=drop.amount;if(course.truck)course.spillKg+=(drop.mass??drop.amount*1.7)*1000}}
 function courseStatus(s){
  if(!course)return null;const c=course;let detail='';
  if(c.def.kind==='axes'){const values=c.axes.map(v=>courseUnit(v/.24));c.progress=values.reduce((a,b)=>a+b,0)/8;c.accuracy=1;const names=['ブーム上','ブーム下','アーム伸','アーム引','バケット開','バケット掘','左旋回','右旋回'];detail=names.filter((n,i)=>values[i]<1).join('・')||'全操作完了'}
@@ -701,7 +721,13 @@ function courseStatus(s){
   const coverage=good/c.cells.length,mean=error/c.cells.length;c.meanError=mean;c.accuracy=courseUnit(1-mean/.25);c.progress=coverage>=.85&&mean<=c.tolerance?1:Math.min(.98,courseUnit(1-error/Math.max(c.startError,1e-6))*.65+coverage*.35);if(c.progress<1e-5)c.progress=0;
   let damage=0;for(const q of c.guard)damage+=Math.max(0,q.y-heights[q.i]-.08);c.overcut=courseUnit((over+damage)/Math.max(.05,c.startError));
   detail='仕上り '+Math.round(coverage*100)+'% / 平均誤差 '+Math.round(mean*100)+'cm'+(c.index===4?' / 深さ '+Math.round((heightAt(0,0)-c.cells[0].target)*100)+'cm':c.index===5?' / 勾配 1:2':'');
- }else if(c.def.kind==='delivery'||c.def.kind==='truck'){c.progress=courseUnit(Math.min(c.delivered,c.dug)/c.goal);c.accuracy=c.delivered+c.spill>0?c.delivered/(c.delivered+c.spill):1;detail=c.truck?c.truckLabel+' / 積込み '+c.delivered.toFixed(2)+' / '+c.goal.toFixed(2)+'m³ / '+Math.min(100,Math.round(c.delivered/c.goal*100))+'% / 積込み回数 '+c.cycles+' / 荷こぼれ '+c.spill.toFixed(2)+'m³':'排土 '+c.delivered.toFixed(2)+' / '+c.goal.toFixed(2)+'m³'}
+ }else if(c.truck){
+  const result=payloadAssessment(c.loadedKg,c.payloadKg,c.spillKg,c.hits,c.elapsed,c.limit,c.exam);c.progress=Math.min(1,result.ratio);c.accuracy=result.accuracy;
+  const kg=Math.ceil(c.loadedKg-1e-7),remain=Math.max(0,Math.floor(c.payloadKg-c.loadedKg+1e-7));
+  detail=c.truckLabel+' / 最大積載量 '+c.payloadKg+'kg / 積載重量 '+kg+'kg / '+Math.round(result.ratio*100)+'% / '+(result.over?'過積載 '+Math.ceil(c.loadedKg-c.payloadKg)+'kg':'残り '+remain+'kg')+' / 積込み回数 '+c.cycles+' / 荷こぼれ '+Math.ceil(c.spillKg)+'kg';
+  if(c.finished||c.submitted)detail+=' / '+(result.over?'過積載・不合格':result.enough?'適正積載':'積載不足');
+  return {...assessCourse(c,c.limit,c.exam),...result,progress:c.progress,accuracy:c.accuracy,elapsed:c.elapsed,hits:c.hits,name:c.def.name,goalText:c.def.goal,detail,limit:c.limit,courseIndex:c.index,exam:c.exam,complete:!!c.submitted&&result.enough,manualFinish:true,pending:drops.length>0,loadedKg:kg,payloadKg:c.payloadKg,remainingKg:remain};
+ }else if(c.def.kind==='delivery'){c.progress=courseUnit(Math.min(c.delivered,c.dug)/c.goal);c.accuracy=c.delivered+c.spill>0?c.delivered/(c.delivered+c.spill):1;detail='排土 '+c.delivered.toFixed(2)+' / '+c.goal.toFixed(2)+'m³'}
  return {...assessCourse(c,c.limit,c.exam),name:c.def.name,goalText:c.def.goal,detail,limit:c.limit,courseIndex:c.index,exam:c.exam,complete:c.progress>=.999};
 }
 function courseTick(prev,s,dt){
@@ -715,9 +741,9 @@ function courseTick(prev,s,dt){
  }
  if(c.truck){if(!c.cycleOpen&&soil>=Math.max(.008,c.bucketCap*.20)&&!dumping){c.cycleOpen=true;c.cycleVolume=0}refreshTruck(c)}courseBlocked=false;c.clock+=dt;if(c.clock<.20)return c.last;c.clock=0;c.last=courseStatus(s);return c.last;
 }
-function finishCourse(s){const result=courseStatus(s);if(course)course.finished=true;return result}
+function finishCourse(s){if(!course)return null;if(course.truck){if(drops.length&&!(course.exam&&course.elapsed>=course.limit))return null;course.submitted=true}const result=courseStatus(s);course.finished=true;return result}
 
-function resetTerrain(){clearCourse();heights.set(initial);looseDepth.fill(0);damage.fill(0);for(let i=0;i<pos.count;i++){pos.setY(i,heights[i]);paintVertex(i)}pos.needsUpdate=true;geo.attributes.color.needsUpdate=true;geo.computeVertexNormals();soil=0;pendingCut=0;workMode='';excavationLoad=0;previousTip=null;previousK=null;previousA=null;dumping=false;spillDelay=0;carried.visible=false;incoming.length=drops.length=0;intake.count=falling.count=0;dirty=false;unstable.clear();lastSoilInfo='';lastFill=-1;lastFillTime=-1}
+function resetTerrain(){clearCourse();heights.set(initial);looseDepth.fill(0);damage.fill(0);for(let i=0;i<pos.count;i++){pos.setY(i,heights[i]);paintVertex(i)}pos.needsUpdate=true;geo.attributes.color.needsUpdate=true;geo.computeVertexNormals();soil=0;soilMass=0;pendingCut=0;workMode='';excavationLoad=0;previousTip=null;previousK=null;previousA=null;dumping=false;spillDelay=0;carried.visible=false;incoming.length=drops.length=0;intake.count=falling.count=0;dirty=false;unstable.clear();lastSoilInfo='';lastFill=-1;lastFillTime=-1}
 // Isolate arm/bucket cutting travel from boom, swing and track motion.
 function scoopTravel(b,a,k,oldA,oldK,tipY,tipZ){
  if(oldA===null||oldK===null||!(a<oldA-1e-8||k<oldK-1e-8))return 0;
@@ -841,7 +867,7 @@ function preCut(prev,next){
  }
  if(!shallowCut&&!deepCut)return '';
  const aw=Math.abs(next.a-prev.a)/(Math.abs(next.a-prev.a)+Math.abs(next.k-prev.k)+1e-9);
- let removed=0,physical=0,count=Math.min(8,Math.max(1,Math.ceil(travel/(step*.25))));
+ let removed=0,removedMass=0,physical=0,count=Math.min(8,Math.max(1,Math.ceil(travel/(step*.25))));
  for(let j=1;j<=count;j++){
   const q={...next};for(const key of ['x','z','yaw','swing','b','a','k'])q[key]=prev[key]+(next[key]-prev[key])*j/count;
   const c=contactProfile(q);if(c.edgeGap>=-.0005*sc||c.edgeGap>=c.backGap-.006*sc)continue;
@@ -852,12 +878,12 @@ function preCut(prev,next){
   const g=materialAt(next,c.lip.x,c.lip.z,heightAt(c.lip.x,c.lip.z)-.001),bite=maxBiteDepth(next,width,aw,g),depth=Math.min(penetration,bite),volume=width*advance*depth;
   if(depth<=0)continue;
   physical+=volume;
-  removed+=editStrip(c.lip,c.axis,width,c.lip.y+Math.max(0,penetration-bite),Math.max(.001*sc,travel*2.8/count),travel/count+step*.50,next);
+  const cut=editStrip(c.lip,c.axis,width,c.lip.y+Math.max(0,penetration-bite),Math.max(.001*sc,travel*2.8/count),travel/count+step*.50,next);removed+=cut;removedMass+=cut*g.weight/9.81;
  }
  if(removed<=0)return '';
  const cap=Math.max(.01,machineProfile(next).capacity*([1,1.15,.55,0,0,.8,0,0][next.att]||1));
  const collected=Math.min(Math.max(0,cap-soil),removed,physical*1.65);
- soil+=collected;pendingCut+=collected;
+ soilMass+=collected*(removedMass/removed);soil+=collected;pendingCut+=collected;
  redistribute(p.lip,p.axis,width,removed-collected,dx,dz);
  return shallow?'鋤取り':'掘削';
 }
@@ -865,7 +891,7 @@ function resolveMotion(prev,next){
  courseBlocked=false;if(!next.active||!next.engine||!next.unlocked)return next;
  const keys=['x','z','yaw','swing','b','a','k'];
  if(keys.every(k=>Math.abs(next[k]-prev[k])<1e-9))return next;
- const before=soil,pendingBefore=pendingCut;
+ const before=soil,massBefore=soilMass,pendingBefore=pendingCut;
  const old=contactProfile(prev);let target=contactProfile(next),load=0;
  if(old&&target&&(next.a<prev.a-1e-8||next.k<prev.k-1e-8)){
   const dx=target.lip.x-old.lip.x,dz=target.lip.z-old.lip.z,dy=target.lip.y-old.lip.y,travel=Math.hypot(dx,dz,dy),horizontal=Math.hypot(dx,dz),width=target.bw*next.scale;
@@ -884,7 +910,7 @@ function resolveMotion(prev,next){
  const permitted=isGrading?.065*next.scale:0;
  function rollback(){
   const tx=terrainTransaction;terrainTransaction=null;
-  for(const [i,[y,loose]] of tx)change(i,y,loose);soil=before;pendingCut=pendingBefore;
+  for(const [i,[y,loose]] of tx)change(i,y,loose);soil=before;soilMass=massBefore;pendingCut=pendingBefore;
  }
  const previousObstacle=courseCollision(prev);
  if(courseCollision(next)&&!previousObstacle)courseBlocked=true;
@@ -968,7 +994,7 @@ const stableVolume=capacity*retainedFraction(Math.cos(angle),Math.sin(angle));
 const canSpill=mouth.y<-.10&&tooth.y>surface+.08;
 spillDelay=canSpill&&!isCutting?spillDelay+dt:0;
 dumping=soil>stableVolume+.00001&&canSpill&&!isCutting&&(dk>0.00005||spillDelay>.18);
-if(dumping){const amount=Math.min(soil-stableVolume,capacity*dt*(.3+Math.max(0,-mouth.y)*1.6));soil-=launchDrops(amount,bw,s,capacity)}
+if(dumping){const amount=Math.min(soil-stableVolume,capacity*dt*(.3+Math.max(0,-mouth.y)*1.6));const density=soil>0?soilMass/soil:0,released=launchDrops(amount,bw,s,capacity);soil=Math.max(0,soil-released);soilMass=Math.max(0,soilMass-released*density);if(soil<1e-8)soilMass=0}
 pendingCut=0;
 }
 previousTip=tooth.clone();

@@ -113,7 +113,7 @@ const COURSES=[
  {name:'04 水平鋤取り',kind:'grade',seconds:240,goal:'黄色枠内の盛土を緑の基準高さまで均す'},
  {name:'05 溝掘削',kind:'grade',seconds:300,goal:'黄色枠内を指定深さに掘る'},
  {name:'06 法面整形',kind:'grade',seconds:300,goal:'黄色枠内を緑の基準勾配に仕上げる'},
- {name:'07 ダンプ積込み',kind:'truck',seconds:240,goal:'掘削した土をダンプの荷台へ積み込む'},
+ {name:'07 ダンプ積込み',kind:'truck',seconds:900,goal:'掘削と旋回を繰り返し、ダンプを指定土量まで積み込む'},
  {name:'08 狭所作業',kind:'delivery',seconds:240,goal:'障害物を避けて掘削し、黄色枠へ排土'}
 ];
 const courseUnit=v=>Math.max(0,Math.min(1,v));
@@ -544,10 +544,109 @@ function clearCourse(){disposeChildren(courseObjects);course=null;courseBlocked=
 function markerLine(a,b,material=markYellow){const o=segment(courseObjects,material,.025);place(o,v(...a),v(...b));return o}
 function outlineZone(r,y,material=markYellow){const a=[r.x0,y,r.z0],b=[r.x1,y,r.z0],c=[r.x1,y,r.z1],d=[r.x0,y,r.z1];for(const [x,z] of [[a,b],[b,c],[c,d],[d,a]])markerLine(x,z,material)}
 function insideZone(r,x,z){return !!r&&x>=r.x0&&x<=r.x1&&z>=r.z0&&z<=r.z1}
+// Work-truck dimensions in metres. Payload volumes are training targets, not rated load guarantees.
+const DUMP_PROFILES=[
+ {label:'軽ダンプ',w:1.48,l:1.82,bedY:.70,wall:.34,cabL:1.26,cabH:1.16,r:.28,dual:false,axles:2,goal:.20},
+ {label:'2tダンプ',w:1.69,l:3.05,bedY:.91,wall:.38,cabL:1.52,cabH:1.46,r:.34,dual:true,axles:2,goal:1.0},
+ {label:'2tダンプ',w:1.69,l:3.05,bedY:.91,wall:.38,cabL:1.52,cabH:1.46,r:.34,dual:true,axles:2,goal:1.0},
+ {label:'2tダンプ',w:1.69,l:3.05,bedY:.91,wall:.38,cabL:1.52,cabH:1.46,r:.34,dual:true,axles:2,goal:1.0},
+ {label:'4tダンプ',w:2.19,l:3.40,bedY:1.12,wall:.48,cabL:1.78,cabH:1.70,r:.42,dual:true,axles:2,goal:2.2},
+ {label:'10tダンプ',w:2.49,l:5.10,bedY:1.42,wall:.55,cabL:2.02,cabH:1.96,r:.52,dual:true,axles:3,goal:5.0},
+ {label:'10tダンプ',w:2.49,l:5.10,bedY:1.42,wall:.55,cabL:2.02,cabH:1.96,r:.52,dual:true,axles:3,goal:5.0}
+];
+function buildDump(c,s,t){
+ const d=DUMP_PROFILES[MACHINE_PROFILES.indexOf(machineProfile(s))],w=d.w,l=d.l,h=d.bedY,wall=d.wall,cl=d.cabL,ch=d.cabH,r=d.r,th=.075,clear=.10;
+ const x=t.x,z=t.z,y=heightAt(x,z),g=group(courseObjects,x,y,z),cabZ=l/2+clear+cl/2;
+ const body=mat(0x21495d,.48,.28),bodyEdge=mat(0x163746,.55,.34),cabPaint=mat(0xe4e9e7,.34,.15),bed=mat(0x777d7d,.8,.36),frame=mat(0x303334,.75,.35),windowMat=mat(0x314750,.19,.38),lamp=mat(0xe8e0bd,.28,.1),red=mat(0x9c2220,.4),amber=mat(0xbd6b20,.4),hub=mat(0x8d9496,.5,.5),black=mat(0x171b1b,.9);
+ const bx=w*.5,front=cabZ+cl*.5,back=-l*.5;
+ // Twin chassis rails, cross members, fuel tank, suspension and mudguards.
+ for(const sign of [-1,1]){
+  box(g,frame,sign*w*.24,h*.62,(front+back)/2,w*.105,.19,front-back-.2);
+  box(g,frame,sign*w*.32,r*.96,cabZ-cl*.25,w*.20,.27,.56);
+  box(g,hub,sign*w*.36,r*1.4,cabZ-cl*.52,w*.19,.28,.60);
+ }
+ for(const zz of [back+.2,0,l*.36,cabZ])box(g,frame,0,h*.61,zz,w*.68,.16,.14);
+ box(g,frame,0,h-.18,0,w*.62,.25,l*.85);
+ // Actual flat steel load bed, pressed side panels, tailgate, headboard and reinforcement ribs.
+ box(g,bed,0,h-.055,0,w,.11,l);
+ for(const sign of [-1,1]){
+  box(g,body,sign*(bx-th/2),h+wall/2,0,th,wall,l);
+  box(g,bodyEdge,sign*(bx-.01),h+wall-.035,0,.09,.075,l+.04);
+  box(g,bodyEdge,sign*(bx-.01),h+.055,0,.10,.11,l);
+  for(let j=0;j<Math.max(3,Math.round(l/.55));j++){const zz=-l/2+.23+j*(l-.46)/(Math.max(3,Math.round(l/.55))-1);box(g,bodyEdge,sign*(bx+.012),h+wall*.49,zz,.042,wall*.76,.065)}
+ }
+ for(const sign of [-1,1]){
+  box(g,body,0,h+wall/2,sign*(l/2-th/2),w-2*th,wall,th);
+  box(g,bodyEdge,0,h+wall-.035,sign*(l/2+.008),w,.08,.09);
+ }
+ for(const sign of [-1,1]){
+  box(g,hub,sign*w*.35,h+.11,back-.047,.085,.09,.08);
+  box(g,red,sign*w*.34,h-.19,back-.065,.15,.085,.045);
+  box(g,amber,sign*w*.23,h-.19,back-.065,.10,.085,.045);
+ }
+ box(g,frame,0,h*.55,back-.08,w*.91,.14,.14);box(g,hub,0,h*.54,back-.16,.28,.13,.025);
+ // Cab-over truck with shaped roof and angled windshield, doors, glazing and mirrors.
+ const cabBottom=Math.max(.40,r*1.27),cabTop=cabBottom+ch,localFront=cl/2;
+ extrude(g,cabPaint,[[-cl/2,0],[-cl/2,ch*.88],[-cl*.40,ch],[cl*.30,ch],[cl*.48,ch*.82],[localFront,ch*.12],[localFront,0]],w*.95,0,cabBottom,cabZ,.035);
+ const windshield=box(g,windowMat,0,cabBottom+ch*.69,cabZ+cl*.468,w*.84,ch*.36,.035);windshield.rotation.x=-.13;
+ box(g,black,0,cabBottom+ch*.69,cabZ+cl*.49,.035,ch*.35,.037);
+ for(const sign of [-1,1]){
+  box(g,windowMat,sign*w*.481,cabBottom+ch*.70,cabZ+cl*.02,.025,ch*.32,cl*.69);
+  box(g,black,sign*w*.486,cabBottom+ch*.70,cabZ-cl*.16,.025,ch*.35,.035);
+  box(g,hub,sign*w*.486,cabBottom+ch*.43,cabZ-cl*.12,.035,.055,.14);
+  box(g,frame,sign*w*.42,cabBottom-.11,cabZ,.19,.095,cl*.56);
+  box(g,black,sign*(w*.54+.08),cabBottom+ch*.65,cabZ+cl*.36,.115,.25,.14);
+  box(g,frame,sign*w*.52,cabBottom+ch*.57,cabZ+cl*.37,.18,.032,.036);
+ }
+ box(g,black,0,cabBottom+ch*.25,front+.02,w*.78,ch*.17,.045);
+ for(let j=0;j<5;j++)box(g,hub,0,cabBottom+ch*.19+j*.032,front+.052,w*.71,.012,.012);
+ box(g,frame,0,cabBottom+.055,front+.05,w*.98,.15,.16);
+ for(const sign of [-1,1]){
+  box(g,lamp,sign*w*.32,cabBottom+ch*.14,front+.09,w*.20,.125,.036);
+  box(g,amber,sign*w*.44,cabBottom+ch*.14,front+.09,w*.045,.09,.036);
+ }
+ box(g,hub,0,cabBottom+.09,front+.145,.29,.13,.028);
+ // Rubber tires with tread grooves, steel hubs, lug bolts and rear dual tires.
+ const axles=d.axles===3?[back+l*.25,back+l*.25+1.30,cabZ+cl*.06]:[back+l*.37,cabZ+cl*.05];
+ const tw=Math.min(.27,w*.145);
+ for(let i=0;i<axles.length;i++)for(const sign of [-1,1]){
+  const zz=axles[i],xx=sign*(bx-tw*.50-.02);
+  cyl(g,rubber,xx,r,zz,r,tw,'x');cyl(g,hub,sign*(bx+.005),r,zz,r*.56,.047,'x');cyl(g,frame,sign*(bx+.036),r,zz,r*.23,.045,'x');
+  for(let j=0;j<8;j++){const ang=j*Math.PI/4;cyl(g,chrome,sign*(bx+.062),r+Math.cos(ang)*r*.36,zz+Math.sin(ang)*r*.36,.018,.022,'x')}
+  for(let j=0;j<12;j++){const ang=j*Math.PI/6;const o=box(g,black,xx,r+Math.cos(ang)*(r-.008),zz+Math.sin(ang)*(r-.008),tw*.88,.017,r*.18);o.rotation.x=ang}
+  if(d.dual&&i<axles.length-1)cyl(g,rubber,xx-sign*(tw+.035),r,zz,r,tw,'x');
+  box(g,frame,xx,r*.76,zz-r-.055,tw*(d.dual&&i<axles.length-1?1.6:1),r*.81,.045);
+ }
+ const innerW=w-2*th,innerL=l-2*th;
+ const bounds={x0:x-innerW/2,x1:x+innerW/2,z0:z-innerL/2,z1:z+innerL/2,y:y+h,wall,innerW,innerL};
+ c.truck=bounds;c.zone=bounds;c.goal=d.goal;c.limit=Math.max(720,Math.min(1200,Math.ceil(d.goal/c.bucketCap)*85));c.truckLabel=d.label;
+ // A low-resolution local heightfield represents separate bucket loads on the bed.
+ const nx=12,nz=Math.max(14,Math.round(l*7)),geo=new T.PlaneGeometry(innerW,innerL,nx,nz);geo.rotateX(-Math.PI/2);
+ const pile=mesh(g,geo,earth,0,h+.006,0,false);pile.visible=false;
+ const attr=geo.attributes.position,levels=new Float32Array(attr.count),weights=new Float32Array(attr.count);
+ for(let j=0;j<=nz;j++)for(let i=0;i<=nx;i++)weights[j*(nx+1)+i]=((i===0||i===nx)?.5:1)*((j===0||j===nz)?.5:1);
+ c.pile=pile;c.loadGrid={nx,nz,attr,levels,weights,area:innerW*innerL/(nx*nz),dirty:false};
+ const wallTop=y+h+wall;
+ c.obstacles.push({x0:x-w/2,x1:x+w/2,z0:z+l/2,z1:z+front,y0:y,y1:y+cabTop});
+ for(const xx of [x-w/2+th/2,x+w/2-th/2])c.obstacles.push({x0:xx-th/2,x1:xx+th/2,z0:z-l/2,z1:z+l/2,y0:y+h-.12,y1:wallTop});
+ for(const zz of [z-l/2+th/2,z+l/2-th/2])c.obstacles.push({x0:x-w/2,x1:x+w/2,z0:zz-th/2,z1:zz+th/2,y0:y+h-.12,y1:wallTop});
+ c.obstacles.push({x0:x-w/2,x1:x+w/2,z0:z-l/2,z1:z+l/2,y0:y,y1:y+h});
+ outlineZone(bounds,wallTop+.025);
+}
+function addTruckLoad(c,drop){
+ const g=c.loadGrid,r=c.truck,cx=drop.p.x-(r.x0+r.x1)/2,cz=drop.p.z-(r.z0+r.z1)/2,rad=Math.max(.26,Math.min(.85,Math.cbrt(c.bucketCap)*1.15));
+ let cells=[],total=0;for(let i=0;i<g.attr.count;i++){const dist=Math.hypot(g.attr.getX(i)-cx,g.attr.getZ(i)-cz),w=Math.max(0,1-dist/rad)*g.weights[i];if(w>0){cells.push([i,w]);total+=w}}
+ if(!total){let best=0,dist=Infinity;for(let i=0;i<g.attr.count;i++){const d=Math.hypot(g.attr.getX(i)-cx,g.attr.getZ(i)-cz);if(d<dist){best=i;dist=d}}cells=[[best,1]];total=1}
+ for(const [i,w] of cells)g.levels[i]+=drop.amount*w/total/(g.area*g.weights[i]);
+ // Redistribute steep heaps conservatively to adjacent vertices; preserve separate loading locations.
+ for(let pass=0;pass<3;pass++)for(let j=0;j<=g.nz;j++)for(let i=0;i<=g.nx;i++){const k=j*(g.nx+1)+i;for(const n of [i<g.nx?k+1:-1,j<g.nz?k+g.nx+1:-1]){if(n<0)continue;const d=g.levels[k]-g.levels[n],slope=.78*(n===k+1?r.innerW/g.nx:r.innerL/g.nz);if(Math.abs(d)<=slope)continue;const vol=(Math.abs(d)-slope)*.26*g.area*Math.min(g.weights[k],g.weights[n])*Math.sign(d);g.levels[k]-=vol/(g.area*g.weights[k]);g.levels[n]+=vol/(g.area*g.weights[n])}}
+ g.dirty=true;c.pile.visible=true;
+}
+function refreshTruck(c){const g=c?.loadGrid;if(!g?.dirty)return;g.dirty=false;for(let i=0;i<g.attr.count;i++)g.attr.setY(i,Math.max(.001,g.levels[i]));g.attr.needsUpdate=true;c.pile.geometry.computeVertexNormals();c.pile.geometry.computeBoundingSphere()}
 function startCourse(index,s,exam=false){
  clearCourse();const def=COURSES[index],spec=bucketSpec(s);if(!def||!spec)return null;
  const p=machineProfile(s),bw=spec.W*s.scale,reach=p.boom+p.arm,cap=Math.max(.01,p.capacity*([1,1.15,.55,0,0,.8,0,0][s.att]||1)),baseY=heightAt(0,0);
- const c=course={index,def,exam,elapsed:0,hits:0,lastHit:-10,dug:0,delivered:0,spill:0,goal:cap*.35,progress:0,accuracy:1,overcut:0,axes:new Array(8).fill(0),targetIndex:0,targets:[],hold:0,obstacles:[],cells:[],guard:[],startError:0,meanError:0,grade:null,zone:null,truck:null,pile:null,clock:0,finished:false,last:null};
+ const c=course={index,def,exam,elapsed:0,hits:0,lastHit:-10,dug:0,delivered:0,spill:0,goal:cap*4,progress:0,accuracy:1,overcut:0,axes:new Array(8).fill(0),targetIndex:0,targets:[],hold:0,obstacles:[],cells:[],guard:[],startError:0,meanError:0,grade:null,zone:null,truck:null,pile:null,clock:0,finished:false,last:null,limit:def.seconds,cycles:0,cycleVolume:0,cycleOpen:false,bucketCap:cap};
  if(def.kind==='targets'){
   for(const q of [{b:.78,a:-1.30,k:-.55,swing:0},{b:.93,a:-1.15,k:-.65,swing:.38},{b:.65,a:-1.65,k:-.7,swing:-.40}]){
    const t=toolPoint({...s,...q,x:0,z:0,yaw:0},0,spec.tip[0],spec.tip[1]);t.mesh=mesh(courseObjects,new T.SphereGeometry(Math.max(.12,bw*.17),16,12),markYellow,t.x,t.y,t.z,false);c.targets.push(t);markerLine([t.x,heightAt(t.x,t.z)+.04,t.z],[t.x,t.y,t.z]);
@@ -566,18 +665,7 @@ function startCourse(index,s,exam=false){
   const t=toolPoint({...s,b:1.05,a:-1.25,k:-.70,swing:1.02,x:0,z:0,yaw:0},0,spec.tip[0],spec.tip[1]);
   const w=Math.max(bw*1.9,.8),l=Math.max(bw*2.5,1.0);c.zone={x0:t.x-w/2,x1:t.x+w/2,z0:t.z-l/2,z1:t.z+l/2};const y=heightAt(t.x,t.z);
   if(def.kind==='truck'){
-   const cy=Math.max(y+.35,Math.min(t.y-.35,Math.max(.55,p.height*.45)));c.truck={...c.zone,y:cy};
-   const steelBed=mat(0x485259,.55,.4),truckPaint=mat(0xe6e5db,.5);
-   box(courseObjects,steelBed,t.x,cy-.12,t.z,w,.24,l);
-   for(const sign of [-1,1])box(courseObjects,steelBed,t.x+sign*w*.49,cy+.18,t.z,.08,.36,l);
-   for(const sign of [-1,1])box(courseObjects,steelBed,t.x,cy+.18,t.z+sign*l*.49,w,.36,.08);
-   box(courseObjects,truckPaint,t.x,cy+.10,t.z+l*.77,w,.83,l*.48);box(courseObjects,mat(0x344c5a,.25),t.x,cy+.32,t.z+l*1.01,w*.78,.34,.025);
-   for(const sign of [-1,1])for(const zz of [-l*.35,l*.32,l*.83])cyl(courseObjects,rubber,t.x+sign*w*.48,y+.26,t.z+zz,Math.min(.30,w*.28),.15,'x');
-   c.pile=mesh(courseObjects,new T.IcosahedronGeometry(1,2),earth,t.x,cy+.04,t.z,false);c.pile.visible=false;outlineZone(c.zone,cy+.38);
-   c.obstacles.push({x0:c.zone.x0-.06,x1:c.zone.x1+.06,z0:c.zone.z1,z1:c.zone.z1+l*.52,y0:y,y1:cy+.60});
-   for(const xx of [c.zone.x0,c.zone.x1])c.obstacles.push({x0:xx-.045,x1:xx+.045,z0:c.zone.z0,z1:c.zone.z1,y0:cy-.12,y1:cy+.36});
-   for(const zz of [c.zone.z0,c.zone.z1])c.obstacles.push({x0:c.zone.x0,x1:c.zone.x1,z0:zz-.045,z1:zz+.045,y0:cy-.12,y1:cy+.36});
-   c.obstacles.push({x0:c.zone.x0,x1:c.zone.x1,z0:c.zone.z0,z1:c.zone.z1,y0:y,y1:cy});
+   buildDump(c,s,t);
   }else outlineZone(c.zone,y+.065);
   if(index===7){for(const [bx,bz] of [[-reach*.40,reach*.68],[reach*.25,reach*.52]]){const hh=Math.max(.55,p.height*.50),ww=Math.max(.35,bw*.45),gy=heightAt(bx,bz);c.obstacles.push({x0:bx-ww/2,x1:bx+ww/2,z0:bz-ww/2,z1:bz+ww/2,y0:gy,y1:gy+hh});box(courseObjects,barrierMat,bx,gy+hh*.5,bz,ww,hh,ww)}}
   outlineZone({x0:-p.width*.17-bw*.65,x1:-p.width*.17+bw*.65,z0:reach*.40,z1:reach*.82},baseY+.05,markGreen);
@@ -597,7 +685,7 @@ function courseCollision(s){
 function courseLanding(drop,previousY){
  const c=course;if(!c||c.finished||!c.truck)return false;
  if(previousY>=c.truck.y&&drop.p.y<=c.truck.y&&insideZone(c.truck,drop.p.x,drop.p.z)){
-  c.delivered+=drop.amount;if(c.pile){const r=c.truck;c.pile.visible=true;c.pile.scale.set((r.x1-r.x0)*.43,Math.max(.035,Math.min(.38,c.delivered/Math.max(.1,(r.x1-r.x0)*(r.z1-r.z0)))*2.5),(r.z1-r.z0)*.40);c.pile.position.y=r.y+c.pile.scale.y*.40}return true;
+  c.delivered+=drop.amount;c.cycleVolume+=drop.amount;if(c.cycleOpen&&c.cycleVolume>=Math.max(.005,c.bucketCap*.18)){c.cycles++;c.cycleOpen=false}addTruckLoad(c,drop);return true;
  }return false;
 }
 function courseGroundLanding(drop){if(!course||course.finished||!course.zone)return;if(!course.truck&&insideZone(course.zone,drop.p.x,drop.p.z))course.delivered+=drop.amount;else course.spill+=drop.amount}
@@ -609,8 +697,8 @@ function courseStatus(s){
   const coverage=good/c.cells.length,mean=error/c.cells.length;c.meanError=mean;c.accuracy=courseUnit(1-mean/.25);c.progress=coverage>=.85&&mean<=c.tolerance?1:Math.min(.98,courseUnit(1-error/Math.max(c.startError,1e-6))*.65+coverage*.35);if(c.progress<1e-5)c.progress=0;
   let damage=0;for(const q of c.guard)damage+=Math.max(0,q.y-heights[q.i]-.08);c.overcut=courseUnit((over+damage)/Math.max(.05,c.startError));
   detail='仕上り '+Math.round(coverage*100)+'% / 平均誤差 '+Math.round(mean*100)+'cm'+(c.index===4?' / 深さ '+Math.round((heightAt(0,0)-c.cells[0].target)*100)+'cm':c.index===5?' / 勾配 1:2':'');
- }else if(c.def.kind==='delivery'||c.def.kind==='truck'){c.progress=courseUnit(Math.min(c.delivered,c.dug)/c.goal);c.accuracy=c.delivered+c.spill>0?c.delivered/(c.delivered+c.spill):1;detail='排土 '+c.delivered.toFixed(2)+' / '+c.goal.toFixed(2)+'m³'}
- return {...assessCourse(c,c.def.seconds,c.exam),name:c.def.name,goalText:c.def.goal,detail,limit:c.def.seconds,courseIndex:c.index,exam:c.exam,complete:c.progress>=.999};
+ }else if(c.def.kind==='delivery'||c.def.kind==='truck'){c.progress=courseUnit(Math.min(c.delivered,c.dug)/c.goal);c.accuracy=c.delivered+c.spill>0?c.delivered/(c.delivered+c.spill):1;detail=c.truck?c.truckLabel+' / 積込み '+c.delivered.toFixed(2)+' / '+c.goal.toFixed(2)+'m³ / '+Math.round(c.delivered/c.goal*100)+'% / 積込み回数 '+c.cycles+' / 荷こぼれ '+c.spill.toFixed(2)+'m³':'排土 '+c.delivered.toFixed(2)+' / '+c.goal.toFixed(2)+'m³'}
+ return {...assessCourse(c,c.limit,c.exam),name:c.def.name,goalText:c.def.goal,detail,limit:c.limit,courseIndex:c.index,exam:c.exam,complete:c.progress>=.999};
 }
 function courseTick(prev,s,dt){
  if(!course||course.finished)return null;const c=course;
@@ -621,7 +709,7 @@ function courseTick(prev,s,dt){
   if(c.def.kind==='targets'&&c.targetIndex<c.targets.length){const target=c.targets[c.targetIndex],spec=bucketSpec(s),tip=toolPoint(s,0,spec.tip[0],spec.tip[1]),error=Math.hypot(tip.x-target.x,tip.y-target.y,tip.z-target.z);if(error<Math.max(.14,machineProfile(s).bucket*.24)){c.hold+=dt;if(c.hold>=.40){target.mesh.material=markGreen;c.targetIndex++;c.hold=0}}else c.hold=0}
   if(courseBlocked&&c.elapsed-c.lastHit>.8){c.hits++;c.lastHit=c.elapsed}
  }
- courseBlocked=false;c.clock+=dt;if(c.clock<.20)return c.last;c.clock=0;c.last=courseStatus(s);return c.last;
+ if(c.truck){if(!c.cycleOpen&&soil>=Math.max(.008,c.bucketCap*.20)&&!dumping){c.cycleOpen=true;c.cycleVolume=0}refreshTruck(c)}courseBlocked=false;c.clock+=dt;if(c.clock<.20)return c.last;c.clock=0;c.last=courseStatus(s);return c.last;
 }
 function finishCourse(s){const result=courseStatus(s);if(course)course.finished=true;return result}
 

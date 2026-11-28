@@ -194,7 +194,7 @@ const texCanvas=document.createElement('canvas');texCanvas.width=texCanvas.heigh
 for(let y=0;y<512;y++)for(let x=0;x<512;x++){let n=layers.reduce((v,l,i)=>v+(noise(l,x,y)-.5)*[38,24,15,8][i],0)+(rnd()-.5)*17,p=(y*512+x)*4;image.data[p]=153+n;image.data[p+1]=129+n;image.data[p+2]=99+n;image.data[p+3]=255}tc.putImageData(image,0,0);for(let i=0;i<22000;i++){let q=rnd(),n=Math.floor(70+rnd()*65);tc.fillStyle='rgba('+ (n+25)+','+(n+10)+','+n+','+(.10+rnd()*.22)+')';tc.fillRect(rnd()*512,rnd()*512,1+q*5,1+q*3)}for(let i=0;i<350;i++){tc.fillStyle='rgba(57,44,30,.18)';tc.beginPath();tc.ellipse(rnd()*512,rnd()*512,2+rnd()*5,1+rnd()*2,rnd()*6.28,0,6.28);tc.fill()}const dirt=new T.CanvasTexture(texCanvas);dirt.colorSpace=T.SRGBColorSpace;dirt.wrapS=dirt.wrapT=T.RepeatWrapping;dirt.repeat.set(72,72);dirt.anisotropy=Math.min(4,renderer.capabilities.getMaxAnisotropy());
 const terrainSize=44, subdivisions=176, step=terrainSize/subdivisions, half=terrainSize/2, stride=subdivisions+1;
 const geo=new T.PlaneGeometry(terrainSize,terrainSize,subdivisions,subdivisions);geo.rotateX(-Math.PI/2);
-const pos=geo.attributes.position, initial=new Float32Array(pos.count), heights=new Float32Array(pos.count), looseDepth=new Float32Array(pos.count), damage=new Float32Array(pos.count), colors=new Float32Array(pos.count*3);let terrainMode=5;
+const pos=geo.attributes.position, initial=new Float32Array(pos.count), heights=new Float32Array(pos.count), looseDepth=new Float32Array(pos.count), damage=new Float32Array(pos.count), colors=new Float32Array(pos.count*3),terrainInfo=new Float32Array(pos.count*2);let terrainMode=5;
 const soilColor=new T.Color(), cDry=new T.Color(0xf1e6d6),cWet=new T.Color(0x74604a),cFresh=new T.Color(0xa1825d);
 function layerForVertex(i,y=heights[i],mode=terrainMode){
  if(looseDepth[i]>.0001&&y>=heights[i]-looseDepth[i]-.001)return LOOSE;
@@ -204,12 +204,78 @@ function paintVertex(i){
  const delta=heights[i]-initial[i],variation=.93+.07*Math.sin(i*17.17),g=layerForVertex(i);
  if(terrainMode>=5){soilColor.set(g.tint??0xb99a77).multiplyScalar(variation*(delta<-.04?.9:1));if(g.paved)soilColor.multiplyScalar(1-.22*Math.min(1,damage[i]));}
  else{soilColor.set(GROUND_TINTS[terrainMode]||0xead8bd).lerp(delta<0?cWet:cFresh,Math.min(.6,Math.abs(delta)*1.3)).multiplyScalar(variation)}
- colors.set([soilColor.r,soilColor.g,soilColor.b],i*3);
+ colors.set([soilColor.r,soilColor.g,soilColor.b],i*3);terrainInfo[i*2]=initial[i];terrainInfo[i*2+1]=looseDepth[i];
 }
 for(let i=0;i<pos.count;i++){let xx=pos.getX(i),zz=pos.getZ(i);let fade=Math.min(1,Math.max(0,(half-Math.max(Math.abs(xx),Math.abs(zz)))/3));let y=(Math.sin(xx*.38)*Math.cos(zz*.32)*.065+Math.sin(xx*1.4+zz*.7)*.012)*fade;initial[i]=heights[i]=y;pos.setY(i,y);paintVertex(i)}
-geo.setAttribute('color',new T.BufferAttribute(colors,3));geo.computeVertexNormals();geo.computeBoundingSphere();geo.boundingSphere.radius+=40;
+geo.setAttribute('color',new T.BufferAttribute(colors,3));geo.setAttribute('terrainInfo',new T.BufferAttribute(terrainInfo,2).setUsage(T.DynamicDrawUsage));geo.computeVertexNormals();geo.computeBoundingSphere();geo.boundingSphere.radius+=40;
 const detail=dirt.clone();detail.repeat.set(terrainSize/2,terrainSize/2);detail.needsUpdate=true;
 const groundMaterial=new T.MeshStandardMaterial({color:0xffffff,vertexColors:true,map:detail,bumpMap:detail,bumpScale:.027,roughness:.98});
+// Excavated surfaces get their own 3-D projected texture rather than the original surface photo.
+const cutCanvas=document.createElement('canvas');cutCanvas.width=cutCanvas.height=256;const cutCtx=cutCanvas.getContext('2d'),cutImage=cutCtx.createImageData(256,256);
+let cutSeed=81723;const cutRand=()=>{cutSeed=(Math.imul(cutSeed,1664525)+1013904223)>>>0;return cutSeed/4294967296};
+const grainFields=[8,16,32,64].map(n=>({n,a:Array.from({length:n*n},cutRand)}));
+function cutNoise(l,x,y){let u=x*l.n/256,v=y*l.n/256,i=Math.floor(u),j=Math.floor(v),a=u-i,b=v-j;a=a*a*(3-2*a);b=b*b*(3-2*b);const at=(i,j)=>l.a[((j+l.n)%l.n)*l.n+(i+l.n)%l.n];return (at(i,j)*(1-a)+at(i+1,j)*a)*(1-b)+(at(i,j+1)*(1-a)+at(i+1,j+1)*a)*b}
+for(let y=0;y<256;y++)for(let x=0;x<256;x++){const p=(y*256+x)*4,n=164+grainFields.reduce((s,l,i)=>s+(cutNoise(l,x,y)-.5)*[52,42,27,18][i],0)+(cutRand()-.5)*28;cutImage.data[p]=cutImage.data[p+1]=cutImage.data[p+2]=n;cutImage.data[p+3]=255}cutCtx.putImageData(cutImage,0,0);
+for(let i=0;i<1500;i++){let x=cutRand()*256,y=cutRand()*256,r=.5+cutRand()*2.3;cutCtx.fillStyle=cutRand()>.45?'rgba(55,55,55,.28)':'rgba(235,235,235,.25)';cutCtx.beginPath();cutCtx.ellipse(x,y,r,r*.65,cutRand()*6.28,0,6.28);cutCtx.fill()}
+const cutMap=new T.CanvasTexture(cutCanvas);cutMap.colorSpace=T.NoColorSpace;cutMap.wrapS=cutMap.wrapT=T.RepeatWrapping;cutMap.anisotropy=Math.min(4,renderer.capabilities.getMaxAnisotropy());
+const terrainModeUniform={value:terrainMode};
+groundMaterial.customProgramCacheKey=()=> 'earthwork-exposed-soil-v50';
+groundMaterial.onBeforeCompile=shader=>{
+ shader.uniforms.cutMap={value:cutMap};shader.uniforms.terrainModeValue=terrainModeUniform;
+ shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nattribute vec2 terrainInfo; varying vec2 vTerrainInfo; varying vec3 vTerrainPoint;').replace('#include <begin_vertex>','#include <begin_vertex>\nvTerrainInfo=terrainInfo; vTerrainPoint=position;');
+ shader.fragmentShader=shader.fragmentShader.replace('#include <common>',`#include <common>
+ uniform sampler2D cutMap;
+ uniform float terrainModeValue;
+ varying vec2 vTerrainInfo;
+ varying vec3 vTerrainPoint;
+ float cutGrain(vec3 p,vec3 blend,float freq){
+  return texture2D(cutMap,p.yz*freq).r*blend.x+texture2D(cutMap,p.xz*freq).r*blend.y+texture2D(cutMap,p.xy*freq).r*blend.z;
+ }
+ vec3 exposedTint(float mode,float depth,vec3 p,out float freq,out float band){
+  freq=2.3;band=0.0;
+  if(mode>5.5){
+   float slab=mode<6.5?.15:.05;
+   if(depth<slab){freq=4.5;return mode<6.5?vec3(.48,.48,.45):vec3(.045,.048,.05);}
+   if(depth<slab+.20){freq=3.8;return vec3(.29,.28,.24);}
+   depth-=slab+.20;mode=5.0;
+  }
+  if(mode<4.5){
+   if(mode<.5)return vec3(.24,.145,.075);
+   if(mode<1.5)return vec3(.34,.21,.11);
+   if(mode<2.5)return vec3(.27,.18,.10);
+   if(mode<3.5)return vec3(.24,.22,.18);
+   freq=1.8;return vec3(.27,.29,.30);
+  }
+  float wave=.14*sin(p.x*.32+p.z*.25)+.09*cos(p.z*.63-p.x*.24);
+  float a=.40+wave*.6,b=1.35+wave,c=2.8+wave*1.8,d=4.5+wave*2.4;
+  vec3 col=vec3(.20,.115,.055);
+  col=mix(col,vec3(.43,.255,.105),smoothstep(a-.025,a+.025,depth));
+  col=mix(col,vec3(.32,.29,.22),smoothstep(b-.035,b+.035,depth));
+  col=mix(col,vec3(.34,.155,.075),smoothstep(c-.035,c+.035,depth));
+  col=mix(col,vec3(.25,.27,.24),smoothstep(d-.035,d+.035,depth));
+  freq=depth>b&&depth<c?3.8:depth>d?3.4:2.1;
+  band=1.0-smoothstep(.0,.045,min(min(abs(depth-a),abs(depth-b)),min(abs(depth-c),abs(depth-d))));
+  return col;
+ }
+ `);
+ shader.fragmentShader=shader.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
+ float depth=max(0.0,vTerrainInfo.x-vTerrainPoint.y);
+ float raised=max(0.0,vTerrainPoint.y-vTerrainInfo.x);
+ float loose=smoothstep(.001,.035,vTerrainInfo.y);
+ float fresh=max(smoothstep(.012,.065,depth),max(smoothstep(.012,.045,raised),loose));
+ if(fresh>.001){
+  vec3 rawN=abs(normalize(cross(dFdx(vTerrainPoint),dFdy(vTerrainPoint))));
+  vec3 blend=pow(rawN,vec3(4.0));blend/=max(.0001,blend.x+blend.y+blend.z);
+  float freq,band;vec3 tint=exposedTint(terrainModeValue,depth,vTerrainPoint,freq,band);
+  tint=mix(tint,vec3(.28,.18,.09),max(loose,smoothstep(.01,.06,raised))*.75);
+  float g=cutGrain(vTerrainPoint,blend,freq);
+  float macro=cutGrain(vTerrainPoint+vec3(3.7,1.5,-2.8),blend,.45);
+  float detail=.72+g*.63+(macro-.5)*.38;
+  vec3 cutColor=tint*detail*(1.0-band*.22);
+  diffuseColor.rgb=mix(diffuseColor.rgb,cutColor,fresh);
+ }
+ `);
+};
 const ground=mesh(scene,geo,groundMaterial,0,0,0,false);
 // Grayscale aggregate textures preserve the layer colors while giving paved ground its own finish.
 function pavementTexture(concrete){
@@ -222,7 +288,7 @@ function pavementTexture(concrete){
 }
 const pavementMaps=[pavementTexture(true),pavementTexture(false)];let earthMap=detail,earthBump=detail;
 function applyTerrainTexture(){const tx=terrainMode===6?pavementMaps[0]:terrainMode===7?pavementMaps[1]:earthMap;groundMaterial.map=tx;groundMaterial.bumpMap=terrainMode>=6?tx:earthBump;groundMaterial.bumpScale=terrainMode===6?.004:terrainMode===7?.009:.025;groundMaterial.needsUpdate=true}
-function setTerrainMode(mode){if(!Number.isInteger(mode)||mode<0||mode>7)mode=1;if(mode===terrainMode)return;terrainMode=mode;for(let i=0;i<heights.length;i++)paintVertex(i);geo.attributes.color.needsUpdate=true;applyTerrainTexture()}
+function setTerrainMode(mode){if(!Number.isInteger(mode)||mode<0||mode>7)mode=1;if(mode===terrainMode)return;terrainMode=mode;terrainModeUniform.value=mode;for(let i=0;i<heights.length;i++)paintVertex(i);geo.attributes.color.needsUpdate=true;geo.attributes.terrainInfo.needsUpdate=true;applyTerrainTexture()}
 let photoAssetsReady=Promise.resolve(false);
 if(typeof EARTH_PHOTOS!=='undefined'){
  const loader=new T.TextureLoader();
@@ -251,7 +317,7 @@ function relaxSoil(dt){
 if(dt<=0)return;let batch=Array.from(unstable).slice(0,360);
 for(const i of batch){unstable.delete(i);let ix=i%stride,iz=Math.floor(i/stride);if(ix<2||ix>subdivisions-2||iz<2||iz>subdivisions-2)continue;
 for(const j of [i-1,i+1,i-stride,i+stride]){let d=heights[i]-heights[j],src=d>0?i:j,g=layerForVertex(src);if(g.paved||g===GROUND_TYPES[4])continue;const maxSlope=step*(g.slope??.66);if(Math.abs(d)>maxSlope+.004){let move=(Math.abs(d)-maxSlope)*Math.min(.24,dt*5.5*(g.slump??1))*Math.sign(d);change(i,heights[i]-move);change(j,heights[j]+move)}}}}
-function refreshTerrain(){if(!dirty)return;pos.needsUpdate=true;geo.attributes.color.needsUpdate=true;let now=performance.now();if(now-lastNormals>80){geo.computeVertexNormals();lastNormals=now;dirty=false}}
+function refreshTerrain(){if(!dirty)return;pos.needsUpdate=true;geo.attributes.color.needsUpdate=true;geo.attributes.terrainInfo.needsUpdate=true;let now=performance.now();if(now-lastNormals>80){geo.computeVertexNormals();lastNormals=now;dirty=false}}
 
 const earth=mat(0x8f785a,1),grass=mat(0x68764b,1),pine=mat(0x405a38,1),bark=mat(0x6a5440,1),stone=mat(0x77766a,1);
 const gravel=new T.InstancedMesh(new T.IcosahedronGeometry(1,0),stone,700),dummy=new T.Object3D();for(let i=0;i<700;i++){let xx=(rnd()-.5)*42,zz=(rnd()-.5)*42;if(Math.abs(xx)<5&&Math.abs(zz)<7)xx+=xx<0?-5:5;let r=.012+rnd()*.047;dummy.position.set(xx,heightAt(xx,zz)+r*.15,zz);dummy.scale.set(r,r*.55,r*.8);dummy.rotation.set(rnd()*3,rnd()*6,rnd()*3);dummy.updateMatrix();gravel.setMatrixAt(i,dummy.matrix);gravel.setColorAt(i,new T.Color().setHSL(.10,.14,.30+rnd()*.22))}gravel.instanceMatrix.needsUpdate=true;scene.add(gravel);
@@ -743,7 +809,7 @@ function courseTick(prev,s,dt){
 }
 function finishCourse(s){if(!course)return null;if(course.truck){if(drops.length&&!(course.exam&&course.elapsed>=course.limit))return null;course.submitted=true}const result=courseStatus(s);course.finished=true;return result}
 
-function resetTerrain(){clearCourse();heights.set(initial);looseDepth.fill(0);damage.fill(0);for(let i=0;i<pos.count;i++){pos.setY(i,heights[i]);paintVertex(i)}pos.needsUpdate=true;geo.attributes.color.needsUpdate=true;geo.computeVertexNormals();soil=0;soilMass=0;pendingCut=0;workMode='';excavationLoad=0;previousTip=null;previousK=null;previousA=null;dumping=false;spillDelay=0;carried.visible=false;incoming.length=drops.length=0;intake.count=falling.count=0;dirty=false;unstable.clear();lastSoilInfo='';lastFill=-1;lastFillTime=-1}
+function resetTerrain(){clearCourse();heights.set(initial);looseDepth.fill(0);damage.fill(0);for(let i=0;i<pos.count;i++){pos.setY(i,heights[i]);paintVertex(i)}pos.needsUpdate=true;geo.attributes.color.needsUpdate=true;geo.attributes.terrainInfo.needsUpdate=true;geo.computeVertexNormals();soil=0;soilMass=0;pendingCut=0;workMode='';excavationLoad=0;previousTip=null;previousK=null;previousA=null;dumping=false;spillDelay=0;carried.visible=false;incoming.length=drops.length=0;intake.count=falling.count=0;dirty=false;unstable.clear();lastSoilInfo='';lastFill=-1;lastFillTime=-1}
 // Isolate arm/bucket cutting travel from boom, swing and track motion.
 function scoopTravel(b,a,k,oldA,oldK,tipY,tipZ){
  if(oldA===null||oldK===null||!(a<oldA-1e-8||k<oldK-1e-8))return 0;

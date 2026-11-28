@@ -619,7 +619,7 @@ function buildDump(c,s,t){
  }
  const innerW=w-2*th,innerL=l-2*th;
  const bounds={x0:x-innerW/2,x1:x+innerW/2,z0:z-innerL/2,z1:z+innerL/2,y:y+h,wall,innerW,innerL};
- c.truck=bounds;c.zone=bounds;c.goal=d.goal;c.limit=Math.max(720,Math.min(1200,Math.ceil(d.goal/c.bucketCap)*85));c.truckLabel=d.label;
+ c.truck=bounds;c.truckBounds={x0:x-w/2,x1:x+w/2,z0:z-l/2,z1:z+front,y0:y,y1:y+Math.max(cabTop,h+wall)};c.zone=bounds;c.goal=d.goal;c.limit=Math.max(720,Math.min(1200,Math.ceil(d.goal/c.bucketCap)*85));c.truckLabel=d.label;
  // A low-resolution local heightfield represents separate bucket loads on the bed.
  const nx=12,nz=Math.max(14,Math.round(l*7)),geo=new T.PlaneGeometry(innerW,innerL,nx,nz);geo.rotateX(-Math.PI/2);
  const pile=mesh(g,geo,earth,0,h+.006,0,false);pile.visible=false;
@@ -682,9 +682,13 @@ function courseCollision(s){
   const dx=Math.max(r.x0+s.x,0,-s.x-r.x1),dz=Math.max(r.z0-s.z,0,s.z-r.z1);if(r.y0<=by+p.deck&&dx<p.width*.46&&dz<p.track*.46)return true;
  }return false;
 }
+function truckSurface(c,x,z){
+ const r=c.truck,g=c.loadGrid,fx=Math.max(0,Math.min(g.nx,(x-r.x0)/r.innerW*g.nx)),fz=Math.max(0,Math.min(g.nz,(z-r.z0)/r.innerL*g.nz)),ix=Math.min(g.nx-1,Math.floor(fx)),iz=Math.min(g.nz-1,Math.floor(fz)),dx=fx-ix,dz=fz-iz,i=iz*(g.nx+1)+ix;
+ return r.y+(g.levels[i]*(1-dx)+g.levels[i+1]*dx)*(1-dz)+(g.levels[i+g.nx+1]*(1-dx)+g.levels[i+g.nx+2]*dx)*dz;
+}
 function courseLanding(drop,previousY){
  const c=course;if(!c||c.finished||!c.truck)return false;
- if(previousY>=c.truck.y&&drop.p.y<=c.truck.y&&insideZone(c.truck,drop.p.x,drop.p.z)){
+ if(insideZone(c.truck,drop.p.x,drop.p.z)&&previousY>=c.truck.y&&drop.p.y<=truckSurface(c,drop.p.x,drop.p.z)){
   c.delivered+=drop.amount;c.cycleVolume+=drop.amount;if(c.cycleOpen&&c.cycleVolume>=Math.max(.005,c.bucketCap*.18)){c.cycles++;c.cycleOpen=false}addTruckLoad(c,drop);return true;
  }return false;
 }
@@ -697,7 +701,7 @@ function courseStatus(s){
   const coverage=good/c.cells.length,mean=error/c.cells.length;c.meanError=mean;c.accuracy=courseUnit(1-mean/.25);c.progress=coverage>=.85&&mean<=c.tolerance?1:Math.min(.98,courseUnit(1-error/Math.max(c.startError,1e-6))*.65+coverage*.35);if(c.progress<1e-5)c.progress=0;
   let damage=0;for(const q of c.guard)damage+=Math.max(0,q.y-heights[q.i]-.08);c.overcut=courseUnit((over+damage)/Math.max(.05,c.startError));
   detail='仕上り '+Math.round(coverage*100)+'% / 平均誤差 '+Math.round(mean*100)+'cm'+(c.index===4?' / 深さ '+Math.round((heightAt(0,0)-c.cells[0].target)*100)+'cm':c.index===5?' / 勾配 1:2':'');
- }else if(c.def.kind==='delivery'||c.def.kind==='truck'){c.progress=courseUnit(Math.min(c.delivered,c.dug)/c.goal);c.accuracy=c.delivered+c.spill>0?c.delivered/(c.delivered+c.spill):1;detail=c.truck?c.truckLabel+' / 積込み '+c.delivered.toFixed(2)+' / '+c.goal.toFixed(2)+'m³ / '+Math.round(c.delivered/c.goal*100)+'% / 積込み回数 '+c.cycles+' / 荷こぼれ '+c.spill.toFixed(2)+'m³':'排土 '+c.delivered.toFixed(2)+' / '+c.goal.toFixed(2)+'m³'}
+ }else if(c.def.kind==='delivery'||c.def.kind==='truck'){c.progress=courseUnit(Math.min(c.delivered,c.dug)/c.goal);c.accuracy=c.delivered+c.spill>0?c.delivered/(c.delivered+c.spill):1;detail=c.truck?c.truckLabel+' / 積込み '+c.delivered.toFixed(2)+' / '+c.goal.toFixed(2)+'m³ / '+Math.min(100,Math.round(c.delivered/c.goal*100))+'% / 積込み回数 '+c.cycles+' / 荷こぼれ '+c.spill.toFixed(2)+'m³':'排土 '+c.delivered.toFixed(2)+' / '+c.goal.toFixed(2)+'m³'}
  return {...assessCourse(c,c.limit,c.exam),name:c.def.name,goalText:c.def.goal,detail,limit:c.limit,courseIndex:c.index,exam:c.exam,complete:c.progress>=.999};
 }
 function courseTick(prev,s,dt){
@@ -979,6 +983,7 @@ let width=0,height=0,profileKey='';
 const exteriorBounds=new T.Box3(),tempBounds=new T.Box3();
 function fitExteriorCamera(s){
  exteriorBounds.makeEmpty();base.traverseVisible(o=>{if(!o.isMesh||!o.geometry||o.count===0)return;if(o.isInstancedMesh){if(!o.boundingBox)o.computeBoundingBox();if(o.boundingBox)exteriorBounds.union(tempBounds.copy(o.boundingBox).applyMatrix4(o.matrixWorld));return}if(!o.geometry.boundingBox)o.geometry.computeBoundingBox();if(o.geometry.boundingBox)exteriorBounds.union(tempBounds.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld))});
+ if(s.active&&course?.truckBounds){const r=course.truckBounds;exteriorBounds.expandByPoint(v(r.x0,r.y0,r.z0));exteriorBounds.expandByPoint(v(r.x1,r.y1,r.z1))}
  if(exteriorBounds.isEmpty())return;
  const target=exteriorBounds.getCenter(v(0,0,0)),dir=base.localToWorld(v(-.84,.52,.76)).sub(base.localToWorld(v(0,0,0))).normalize(),right=v(0,1,0).cross(dir).normalize(),up=dir.clone().cross(right).normalize(),tanV=Math.tan(camera.fov*Math.PI/360),tanH=tanV*camera.aspect;
  let distance=1;for(const x of [exteriorBounds.min.x,exteriorBounds.max.x])for(const y of [exteriorBounds.min.y,exteriorBounds.max.y])for(const z of [exteriorBounds.min.z,exteriorBounds.max.z]){const d=v(x,y,z).sub(target);distance=Math.max(distance,d.dot(dir)+1.12*Math.max(Math.abs(d.dot(right))/tanH,Math.abs(d.dot(up))/tanV))}
